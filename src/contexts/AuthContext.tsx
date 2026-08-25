@@ -53,9 +53,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let unsubStudents: (() => void) | undefined;
     let unsubTeachers: (() => void) | undefined;
     
-  let teachersLoaded = false;
-  let studentsLoaded = false;
-  let pendingAuthUser: User | null = null;
+
 
 const processAuthenticatedUser = async (user: User) => {
   setFirebaseUser(user);
@@ -188,36 +186,20 @@ const processAuthenticatedUser = async (user: User) => {
 };
 
 const unsubAuth = onAuthStateChanged(auth, async (user) => {
-  pendingAuthUser = user;
-
-  if (user && !user.isAnonymous && (!teachersLoaded || !studentsLoaded)) {
-    return;
-  }
-
   await processAuthenticatedUser(user);
 });
 
     // Subscribe to teachers directory (readable by all roles for destination selection)
-    unsubTeachers = subscribeToTeachers((teacherList) => {
+unsubTeachers = subscribeToTeachers((teacherList) => {
   setTeachers(teacherList);
-  teachersLoaded = true;
-
-  if (pendingAuthUser && !pendingAuthUser.isAnonymous && studentsLoaded) {
-    processAuthenticatedUser(pendingAuthUser);
-  }
 });
 
     // Subscribe to student roster (teachers & admins)
-    unsubStudents = subscribeToStudents((studentList) => {
+ unsubStudents = subscribeToStudents((studentList) => {
   setStudents(studentList);
-  studentsLoaded = true;
 
   if (studentList.length === 0) {
     seedInitialJMMSData().catch(console.error);
-  }
-
-  if (pendingAuthUser && !pendingAuthUser.isAnonymous && teachersLoaded) {
-    processAuthenticatedUser(pendingAuthUser);
   }
 });
 
