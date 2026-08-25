@@ -1,0 +1,112 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function userDocExists() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function getUserData() {
+      return userDocExists() ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data : {};
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.admin == true || 
+        (userDocExists() && getUserData().role == 'admin') ||
+        request.auth.token.email in ['admin@bearworks.jackson.sparcc.org', 'jaf2jc@bearworks.jackson.sparcc.org']
+      );
+    }
+    
+    function isTeacher() {
+      return isAuthenticated() && (
+        isAdmin() || 
+        request.auth.token.teacher == true || 
+        (userDocExists() && getUserData().role in ['teacher', 'admin'])
+      );
+    }
+    
+    function isStudent() {
+      return isAuthenticated() && (
+        (userDocExists() && getUserData().role == 'student') || 
+        (!isTeacher() && !isAdmin())
+      );
+    }
+
+    // 1. Users collection (Authentication & Roles)
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isTeacher());
+      allow create, update: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // 2. Students collection (Roster)
+    match /students/{studentId} {
+      allow read: if isTeacher() || (isAuthenticated() && (
+        resource.data.email == request.auth.token.email ||
+        resource.data.studentId == getUserData().studentId ||
+        resource.id == getUserData().studentDocId
+      ));
+      allow write: if isAdmin();
+    }
+
+    // 3. Teachers collection (Faculty Directory)
+    match /teachers/{teacherId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // 4. Hall Passes collection (Live & Historic Passes)
+    match /hallPasses/{passId} {
+      // Teachers and Admins can read all passes
+      // Students can ONLY read their own passes
+      allow read: if isTeacher() || (
+        isAuthenticated() && (
+          resource.data.studentId == getUserData().studentId ||
+          resource.data.studentDocId == getUserData().studentDocId ||
+          resource.data.studentEmail == request.auth.token.email
+        )
+      );
+      
+      // Pass creation: Teachers/Admins can create for any student; Students only for themselves
+      allow create: if isAuthenticated() && (
+        isTeacher() || (
+          (request.resource.data.studentId == getUserData().studentId || 
+           request.resource.data.studentDocId == getUserData().studentDocId ||
+           request.resource.data.studentEmail == request.auth.token.email) &&
+          request.resource.data.status == 'ACTIVE'
+        )
+      );
+      
+      // Pass updates: Students can only mark their own active pass COMPLETED
+      allow update: if isAuthenticated() && (
+        isTeacher() || (
+          (resource.data.studentId == getUserData().studentId || 
+           resource.data.studentDocId == getUserData().studentDocId ||
+           resource.data.studentEmail == request.auth.token.email) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'timeIn', 'durationSeconds', 'durationMinutes', 'endedBy']) &&
+          request.resource.data.status == 'COMPLETED'
+        )
+      );
+      
+      allow delete: if isAdmin();
+    }
+
+    // 5. School Settings
+    match /settings/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // Deny all other collections by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+

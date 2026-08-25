@@ -1,0 +1,73 @@
+{
+  "entities": {
+    "Student": {
+      "title": "Student",
+      "description": "A student in the JMMS school roster",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "grade": { "type": "number" },
+        "active": { "type": "boolean" },
+        "email": { "type": "string" },
+        "homeroom": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["studentId", "firstName", "lastName", "grade"]
+    },
+    "Teacher": {
+      "title": "Teacher",
+      "description": "A faculty member authorizing hall passes",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "room": { "type": "string" },
+        "subject": { "type": "string" },
+        "email": { "type": "string" },
+        "active": { "type": "boolean" },
+        "department": { "type": "string" }
+      },
+      "required": ["name", "room"]
+    },
+    "HallPass": {
+      "title": "HallPass",
+      "description": "An active or historical hall pass record",
+      "type": "object",
+      "properties": {
+        "studentDocId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "teacher": { "type": "string" },
+        "teacherRoom": { "type": "string" },
+        "destination": { "type": "string" },
+        "destinationDetails": { "type": "string" },
+        "status": { "type": "string", "enum": ["ACTIVE", "COMPLETED", "EXPIRED", "CANCELLED"] },
+        "timeOut": { "type": "number" },
+        "timeIn": { "type": "number" },
+        "durationSeconds": { "type": "number" },
+        "durationMinutes": { "type": "number" },
+        "createdAt": { "type": "number" },
+        "createdBy": { "type": "string" },
+        "endedBy": { "type": "string" },
+        "notes": { "type": "string" },
+        "flagged": { "type": "boolean" }
+      },
+      "required": ["studentId", "studentName", "teacher", "destination", "status", "timeOut"]
+    }
+  },
+  "firestore": {
+    "/students/{studentId}": {
+      "schema": "Student",
+      "description": "Student roster documents"
+    },
+    "/teachers/{teacherId}": {
+      "schema": "Teacher",
+      "description": "Faculty staff documents"
+    },
+    "/hallPasses/{passId}": {
+      "schema": "HallPass",
+      "description": "Live and historical hall pass documents"
+    }
+  }
+}
