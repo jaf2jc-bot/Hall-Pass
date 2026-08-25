@@ -120,20 +120,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
           }
 
-          profile = {
-            uid: user.uid,
-            email: user.email || '',
-            displayName: user.displayName || user.email?.split('@')[0] || 'JMMS User',
-            photoURL: user.photoURL || undefined,
-            role,
-            studentId,
-            studentDocId,
-            teacherDocId,
-            grade,
-            room
-          };
+         profile = {
+  uid: user.uid,
+  email: user.email || '',
+  displayName: user.displayName || user.email?.split('@')[0] || 'JMMS User',
+  role,
+  ...(user.photoURL ? { photoURL: user.photoURL } : {}),
+  ...(studentId ? { studentId } : {}),
+  ...(studentDocId ? { studentDocId } : {}),
+  ...(teacherDocId ? { teacherDocId } : {}),
+  ...(grade !== undefined ? { grade } : {}),
+  ...(room ? { room } : {}),
+};
 
-          await saveUserProfile(profile);
+await saveUserProfile(profile);
         }
 
         setCurrentUser(profile);
