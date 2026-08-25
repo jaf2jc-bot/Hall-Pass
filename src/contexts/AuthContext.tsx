@@ -77,64 +77,81 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         let profile = await getUserProfile(user.uid);
 
         if (!profile) {
-          // Determine initial role based on email & school roster
-          let role: UserRole = 'student';
-          let teacherDocId: string | undefined;
-          let studentId: string | undefined;
-          let studentDocId: string | undefined;
-          let room: string | undefined;
-          let grade: number = 8;
+  let role: UserRole | null = null;
+  let teacherDocId: string | undefined;
+  let studentId: string | undefined;
+  let studentDocId: string | undefined;
+  let room: string | undefined;
+  let grade: number | undefined;
 
-          const emailLower = email.toLowerCase();
-          if (
-            emailLower.includes('admin') || 
-            emailLower.startsWith('principal') || 
-            emailLower === 'jaf2jc@bearworks.jackson.sparcc.org'
-          ) {
-            role = 'admin';
-            room = 'Main Administrative Office';
-          } else {
-            // Check teacher directory match
-            const matchingTeacher = teachers.find(
-              (t) => t.email.toLowerCase() === emailLower || emailLower.startsWith(t.name.split(' ')[1]?.toLowerCase() || '---')
-            );
-            if (matchingTeacher) {
-              role = 'teacher';
-              teacherDocId = matchingTeacher.id;
-              room = matchingTeacher.room;
-            } else {
-              // Student role
-              role = 'student';
-              const matchingStudent = students.find((s) => s.email?.toLowerCase() === emailLower);
-              if (matchingStudent) {
-                studentId = matchingStudent.studentId;
-                studentDocId = matchingStudent.id;
-                grade = matchingStudent.grade;
-                room = matchingStudent.homeroom;
-              } else {
-                // Generate student ID from email (e.g., jaf2jc -> 80124)
-                studentId = '8' + Math.floor(1000 + Math.random() * 9000).toString();
-                grade = 8;
-                room = 'Room 204';
-              }
-            }
-          }
+  const emailLower = email.toLowerCase();
 
-         profile = {
-  uid: user.uid,
-  email: user.email || '',
-  displayName: user.displayName || user.email?.split('@')[0] || 'JMMS User',
-  role,
-  ...(user.photoURL ? { photoURL: user.photoURL } : {}),
-  ...(studentId ? { studentId } : {}),
-  ...(studentDocId ? { studentDocId } : {}),
-  ...(teacherDocId ? { teacherDocId } : {}),
-  ...(grade !== undefined ? { grade } : {}),
-  ...(room ? { room } : {}),
-};
+  // ADMIN ACCOUNTS
+  if (
+    emailLower === 'jaf2jc@bearworks.jackson.sparcc.org' ||
+    emailLower.includes('admin') ||
+    emailLower.startsWith('principal')
+  ) {
+    role = 'admin';
+    room = 'Main Administrative Office';
+  }
 
-await saveUserProfile(profile);
-        }
+  // TEACHER ACCOUNTS
+  if (!role) {
+    const matchingTeacher = teachers.find(
+      (t) => t.email?.toLowerCase() === emailLower
+    );
+
+    if (matchingTeacher) {
+      role = 'teacher';
+      teacherDocId = matchingTeacher.id;
+      room = matchingTeacher.room;
+    }
+  }
+
+  // STUDENT ACCOUNTS
+  if (!role) {
+    const matchingStudent = students.find(
+      (s) => s.email?.toLowerCase() === emailLower
+    );
+
+    if (matchingStudent) {
+      role = 'student';
+      studentId = matchingStudent.studentId;
+      studentDocId = matchingStudent.id;
+      grade = matchingStudent.grade;
+      room = matchingStudent.homeroom;
+    }
+  }
+
+  // ACCOUNT NOT ASSIGNED
+  if (!role) {
+    setAuthError(
+      'Your school account has not been assigned a role yet. Please contact a JMMS administrator.'
+    );
+    await signOutFromApp();
+    return;
+  }
+
+  // Build the profile WITHOUT undefined Firestore fields
+  profile = {
+    uid: user.uid,
+    email: user.email || '',
+    displayName:
+      user.displayName ||
+      user.email?.split('@')[0] ||
+      'JMMS User',
+    photoURL: user.photoURL || undefined,
+    role,
+    ...(studentId ? { studentId } : {}),
+    ...(studentDocId ? { studentDocId } : {}),
+    ...(teacherDocId ? { teacherDocId } : {}),
+    ...(grade !== undefined ? { grade } : {}),
+    ...(room ? { room } : {})
+  };
+
+  await saveUserProfile(profile);
+}
 
         setCurrentUser(profile);
         setCurrentRole(profile.role);
