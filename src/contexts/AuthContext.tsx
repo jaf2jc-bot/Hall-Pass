@@ -52,139 +52,174 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     let unsubStudents: (() => void) | undefined;
     let unsubTeachers: (() => void) | undefined;
+    
+  let teachersLoaded = false;
+  let studentsLoaded = false;
+  let pendingAuthUser: User | null = null;
 
-    const unsubAuth = onAuthStateChanged(auth, async (user) => {
-      setFirebaseUser(user);
+const processAuthenticatedUser = async (user: User) => {
+  setFirebaseUser(user);
 
-      if (user && !user.isAnonymous) {
-        // Real authenticated user (e.g. Google Workspace)
-        const email = user.email || '';
-        const emailDomain = email.split('@')[1]?.toLowerCase();
-        
-        // Validate domain restriction: @bearworks.jackson.sparcc.org
-        const isAuthorizedDomain = emailDomain === ALLOWED_DOMAIN.toLowerCase() || 
-          email.toLowerCase() === 'jaf2jc@bearworks.jackson.sparcc.org';
+  if (user && !user.isAnonymous) {
+    const email = user.email || '';
+    const emailDomain = email.split('@')[1]?.toLowerCase();
 
-        if (!isAuthorizedDomain && emailDomain) {
-          setAuthError(`Access restricted: Please sign in with your Jackson Memorial Middle School account (@${ALLOWED_DOMAIN}).`);
-          await signOutFromApp();
-          return;
+    const isAuthorizedDomain =
+      emailDomain === ALLOWED_DOMAIN.toLowerCase() ||
+      email.toLowerCase() === 'jaf2jc@bearworks.jackson.sparcc.org';
+
+    if (!isAuthorizedDomain && emailDomain) {
+      setAuthError(
+        `Access restricted: Please sign in with your Jackson Memorial Middle School account (@${ALLOWED_DOMAIN}).`
+      );
+      await signOutFromApp();
+      return;
+    }
+
+    setAuthError(null);
+
+    let profile = await getUserProfile(user.uid);
+
+    if (!profile) {
+      let role: UserRole | null = null;
+      let teacherDocId: string | undefined;
+      let studentId: string | undefined;
+      let studentDocId: string | undefined;
+      let room: string | undefined;
+      let grade: number | undefined;
+
+      const emailLower = email.toLowerCase();
+
+      // ADMIN
+      if (
+        emailLower === 'jaf2jc@bearworks.jackson.sparcc.org' ||
+        emailLower.includes('admin') ||
+        emailLower.startsWith('principal')
+      ) {
+        role = 'admin';
+        room = 'Main Administrative Office';
+      }
+
+      // TEACHER
+      if (!role) {
+        const matchingTeacher = teachers.find(
+          (t) => t.email?.toLowerCase() === emailLower
+        );
+
+        if (matchingTeacher) {
+          role = 'teacher';
+          teacherDocId = matchingTeacher.id;
+          room = matchingTeacher.room;
         }
+      }
 
-        setAuthError(null);
+      // STUDENT
+      if (!role) {
+        const matchingStudent = students.find(
+          (s) => s.email?.toLowerCase() === emailLower
+        );
 
-        // Fetch or create user profile document in Firestore
-        let profile = await getUserProfile(user.uid);
+        if (matchingStudent) {
+          role = 'student';
+          studentId = matchingStudent.studentId;
+          studentDocId = matchingStudent.id;
+          grade = matchingStudent.grade;
+          room = matchingStudent.homeroom;
+        }
+      }
 
-        if (!profile) {
-  let role: UserRole | null = null;
-  let teacherDocId: string | undefined;
-  let studentId: string | undefined;
-  let studentDocId: string | undefined;
-  let room: string | undefined;
-  let grade: number | undefined;
+      // NO ROLE
+      if (!role) {
+        setAuthError(
+          'Your school account has not been assigned a role yet. Please contact a JMMS administrator.'
+        );
+        await signOutFromApp();
+        return;
+      }
 
-  const emailLower = email.toLowerCase();
+      profile = {
+        uid: user.uid,
+        email: user.email || '',
+        displayName:
+          user.displayName ||
+          user.email?.split('@')[0] ||
+          'JMMS User',
+        photoURL: user.photoURL || undefined,
+        role,
+        ...(studentId ? { studentId } : {}),
+        ...(studentDocId ? { studentDocId } : {}),
+        ...(teacherDocId ? { teacherDocId } : {}),
+        ...(grade !== undefined ? { grade } : {}),
+        ...(room ? { room } : {})
+      };
 
-  // ADMIN ACCOUNTS
-  if (
-    emailLower === 'jaf2jc@bearworks.jackson.sparcc.org' ||
-    emailLower.includes('admin') ||
-    emailLower.startsWith('principal')
-  ) {
-    role = 'admin';
-    room = 'Main Administrative Office';
-  }
+      await saveUserProfile(profile);
+    }
 
-  // TEACHER ACCOUNTS
-  if (!role) {
-    const matchingTeacher = teachers.find(
-      (t) => t.email?.toLowerCase() === emailLower
-    );
+    setCurrentUser(profile);
+    setCurrentRole(profile.role);
 
-    if (matchingTeacher) {
-      role = 'teacher';
-      teacherDocId = matchingTeacher.id;
-      room = matchingTeacher.room;
+    if (profile.role === 'student' && profile.studentId) {
+      const matched = students.find(
+        (s) => s.studentId === profile.studentId
+      );
+
+      if (matched) {
+        setActiveStudent(matched);
+      }
+    }
+
+    if (profile.role === 'teacher' && profile.teacherDocId) {
+      const matched = teachers.find(
+        (t) => t.id === profile.teacherDocId
+      );
+
+      if (matched) {
+        setActiveTeacher(matched);
+      }
+    }
+  } else {
+    if (!currentUser) {
+      await ensureAuthenticated();
     }
   }
 
-  // STUDENT ACCOUNTS
-  if (!role) {
-    const matchingStudent = students.find(
-      (s) => s.email?.toLowerCase() === emailLower
-    );
+  setIsLoading(false);
+};
 
-    if (matchingStudent) {
-      role = 'student';
-      studentId = matchingStudent.studentId;
-      studentDocId = matchingStudent.id;
-      grade = matchingStudent.grade;
-      room = matchingStudent.homeroom;
-    }
-  }
+const unsubAuth = onAuthStateChanged(auth, async (user) => {
+  pendingAuthUser = user;
 
-  // ACCOUNT NOT ASSIGNED
-  if (!role) {
-    setAuthError(
-      'Your school account has not been assigned a role yet. Please contact a JMMS administrator.'
-    );
-    await signOutFromApp();
+  if (user && !user.isAnonymous && (!teachersLoaded || !studentsLoaded)) {
     return;
   }
 
-  // Build the profile WITHOUT undefined Firestore fields
-  profile = {
-    uid: user.uid,
-    email: user.email || '',
-    displayName:
-      user.displayName ||
-      user.email?.split('@')[0] ||
-      'JMMS User',
-    photoURL: user.photoURL || undefined,
-    role,
-    ...(studentId ? { studentId } : {}),
-    ...(studentDocId ? { studentDocId } : {}),
-    ...(teacherDocId ? { teacherDocId } : {}),
-    ...(grade !== undefined ? { grade } : {}),
-    ...(room ? { room } : {})
-  };
-
-  await saveUserProfile(profile);
-}
-
-        setCurrentUser(profile);
-        setCurrentRole(profile.role);
-
-        if (profile.role === 'student' && profile.studentId) {
-          const matched = students.find((s) => s.studentId === profile.studentId);
-          if (matched) setActiveStudent(matched);
-        } else if (profile.role === 'teacher' && profile.teacherDocId) {
-          const matched = teachers.find((t) => t.id === profile.teacherDocId);
-          if (matched) setActiveTeacher(matched);
-        }
-      } else {
-        // Anonymous fallback for seamless preview
-        if (!currentUser) {
-          await ensureAuthenticated();
-        }
-      }
-
-      setIsLoading(false);
-    });
+  await processAuthenticatedUser(user);
+});
 
     // Subscribe to teachers directory (readable by all roles for destination selection)
     unsubTeachers = subscribeToTeachers((teacherList) => {
-      setTeachers(teacherList);
-    });
+  setTeachers(teacherList);
+  teachersLoaded = true;
+
+  if (pendingAuthUser && !pendingAuthUser.isAnonymous && studentsLoaded) {
+    processAuthenticatedUser(pendingAuthUser);
+  }
+});
 
     // Subscribe to student roster (teachers & admins)
     unsubStudents = subscribeToStudents((studentList) => {
-      setStudents(studentList);
-      if (studentList.length === 0) {
-        seedInitialJMMSData().catch(console.error);
-      }
-    });
+  setStudents(studentList);
+  studentsLoaded = true;
+
+  if (studentList.length === 0) {
+    seedInitialJMMSData().catch(console.error);
+  }
+
+  if (pendingAuthUser && !pendingAuthUser.isAnonymous && teachersLoaded) {
+    processAuthenticatedUser(pendingAuthUser);
+  }
+});
 
     return () => {
       unsubAuth();
