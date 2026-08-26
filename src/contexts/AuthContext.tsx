@@ -98,41 +98,22 @@ const processAuthenticatedUser = async (user: User) => {
         room = 'Main Administrative Office';
       }
 
-      // TEACHER
-      if (!role) {
-        const matchingTeacher = teachers.find(
-          (t) => t.email?.toLowerCase() === emailLower
-        );
+      // ALL NEW SCHOOL ACCOUNTS DEFAULT TO STUDENT
+      // Admins are handled above.
+      // Teachers are promoted manually by an administrator.
+      role = 'student';
 
-        if (matchingTeacher) {
-          role = 'teacher';
-          teacherDocId = matchingTeacher.id;
-          room = matchingTeacher.room;
-        }
-      }
+      // If this email already exists in the student roster,
+      // associate the new user profile with that student.
+      const matchingStudent = students.find(
+        (s) => s.email?.toLowerCase() === emailLower
+      );
 
-      // STUDENT
-      if (!role) {
-        const matchingStudent = students.find(
-          (s) => s.email?.toLowerCase() === emailLower
-        );
-
-        if (matchingStudent) {
-          role = 'student';
-          studentId = matchingStudent.studentId;
-          studentDocId = matchingStudent.id;
-          grade = matchingStudent.grade;
-          room = matchingStudent.homeroom;
-        }
-      }
-
-      // NO ROLE
-      if (!role) {
-        setAuthError(
-          'Your school account has not been assigned a role yet. Please contact a JMMS administrator.'
-        );
-        await signOutFromApp();
-        return;
+      if (matchingStudent) {
+        studentId = matchingStudent.studentId;
+        studentDocId = matchingStudent.id;
+        grade = matchingStudent.grade;
+        room = matchingStudent.homeroom;
       }
 
       profile = {
