@@ -97,8 +97,9 @@ if (
   role = 'admin';
   room = 'Main Administrative Office';
 } else {
-  // All other new school accounts start as students.
-  // Teachers can be promoted manually by an administrator.
+  // New school accounts default to student,
+// but DO NOT overwrite an admin role determined above.
+if (!role) {
   role = 'student';
 }
 
