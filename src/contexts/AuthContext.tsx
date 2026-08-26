@@ -154,7 +154,21 @@ if (
 
     setCurrentUser(profile);
     setCurrentRole(profile.role);
+    
+// Now that authentication and role are confirmed,
+    // subscribe to the school rosters.
+    unsubTeachers = subscribeToTeachers((teacherList) => {
+      setTeachers(teacherList);
+    });
 
+    unsubStudents = subscribeToStudents((studentList) => {
+      setStudents(studentList);
+
+      if (studentList.length === 0) {
+        seedInitialJMMSData().catch(console.error);
+      }
+    });
+    
     if (profile.role === 'student' && profile.studentId) {
       const matched = students.find(
         (s) => s.studentId === profile.studentId
@@ -190,23 +204,7 @@ const unsubAuth = onAuthStateChanged(auth, async (user) => {
   await processAuthenticatedUser(user);
 });
 
-// Only subscribe to school data after authentication is complete
-    if (auth.currentUser) {
 
-      // Subscribe to teachers directory
-      unsubTeachers = subscribeToTeachers((teacherList) => {
-        setTeachers(teacherList);
-      });
-
-      // Subscribe to student roster
-      unsubStudents = subscribeToStudents((studentList) => {
-        setStudents(studentList);
-
-        if (studentList.length === 0) {
-          seedInitialJMMSData().catch(console.error);
-        }
-      });
-    }
 
     return () => {
       unsubAuth();
