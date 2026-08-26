@@ -62,6 +62,17 @@ export interface Teacher {
   department?: string;
 }
 
+export interface TeacherRoster {
+  id: string;
+  teacherId: string;
+  teacherName: string;
+  name: string;
+  description?: string;
+  studentIds: string[];
+  createdAt: number;
+  updatedAt: number;
+}
+
 export type UserRole = 'student' | 'teacher' | 'admin';
 
 export interface UserProfile {

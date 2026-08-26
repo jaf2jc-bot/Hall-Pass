@@ -25,7 +25,15 @@ import {
   User
 } from 'firebase/auth';
 import firebaseConfigData from '../../firebase-applet-config.json';
-import { HallPass, Student, Teacher, DestinationType, UserProfile, UserRole } from '../types';
+import {
+  HallPass,
+  Student,
+  Teacher,
+  TeacherRoster,
+  DestinationType,
+  UserProfile,
+  UserRole
+} from '../types';
 import { INITIAL_JMMS_STUDENTS, INITIAL_JMMS_TEACHERS } from './seedData';
 
 // Ensure Firebase is initialized
@@ -51,6 +59,7 @@ export const USERS_COLLECTION = 'users';
 export const STUDENTS_COLLECTION = 'students';
 export const TEACHERS_COLLECTION = 'teachers';
 export const HALL_PASSES_COLLECTION = 'hallPasses';
+export const TEACHER_ROSTERS_COLLECTION = 'teacherRosters';
 
 // Google Workspace domain restriction
 export const ALLOWED_DOMAIN = 'bearworks.jackson.sparcc.org';
@@ -619,23 +628,198 @@ export async function deleteStudent(id: string): Promise<void> {
 }
 
 // ==========================================
-// TEACHER ROSTER MANAGEMENT
+// TEACHER CLASS ROSTER MANAGEMENT
 // ==========================================
 
-export async function addTeacher(teacherData: Omit<Teacher, 'id'>): Promise<string> {
+export function subscribeToTeacherRosters(
+  teacherId: string,
+  callback: (rosters: TeacherRoster[]) => void
+) {
+  const q = query(
+    collection(db, TEACHER_ROSTERS_COLLECTION),
+    where('teacherId', '==', teacherId)
+  );
+
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const list: TeacherRoster[] = [];
+
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+
+        list.push({
+          id: docSnap.id,
+          teacherId: data.teacherId || '',
+          teacherName: data.teacherName || '',
+          name: data.name || '',
+          description: data.description || '',
+          studentIds: Array.isArray(data.studentIds)
+            ? data.studentIds
+            : [],
+          createdAt: Number(data.createdAt) || Date.now(),
+          updatedAt: Number(data.updatedAt) || Date.now()
+        });
+      });
+
+      list.sort((a, b) =>
+        a.name.localeCompare(b.name)
+      );
+
+      callback(list);
+    },
+    (err) => {
+      console.error(
+        'Error subscribing to teacher rosters:',
+        err
+      );
+    }
+  );
+}
+
+export async function createTeacherRoster(
+  teacherId: string,
+  teacherName: string,
+  name: string,
+  description?: string
+): Promise<string> {
   await ensureAuthenticated();
-  const docRef = await addDoc(collection(db, TEACHERS_COLLECTION), teacherData);
+
+  const now = Date.now();
+
+  const rosterData: Omit<TeacherRoster, 'id'> = {
+    teacherId,
+    teacherName,
+    name: name.trim(),
+    description: description?.trim() || '',
+    studentIds: [],
+    createdAt: now,
+    updatedAt: now
+  };
+
+  const docRef = await addDoc(
+    collection(db, TEACHER_ROSTERS_COLLECTION),
+    rosterData
+  );
+
   return docRef.id;
 }
 
-export async function updateTeacher(id: string, teacherData: Partial<Teacher>): Promise<void> {
+export async function updateTeacherRoster(
+  rosterId: string,
+  updates: Partial<TeacherRoster>
+): Promise<void> {
   await ensureAuthenticated();
-  const teacherRef = doc(db, TEACHERS_COLLECTION, id);
-  await updateDoc(teacherRef, teacherData);
+
+  const rosterRef = doc(
+    db,
+    TEACHER_ROSTERS_COLLECTION,
+    rosterId
+  );
+
+  await updateDoc(rosterRef, {
+    ...updates,
+    updatedAt: Date.now()
+  });
 }
 
-export async function deleteTeacher(id: string): Promise<void> {
+export async function deleteTeacherRoster(
+  rosterId: string
+): Promise<void> {
   await ensureAuthenticated();
-  const teacherRef = doc(db, TEACHERS_COLLECTION, id);
-  await deleteDoc(teacherRef);
+
+  const rosterRef = doc(
+    db,
+    TEACHER_ROSTERS_COLLECTION,
+    rosterId
+  );
+
+  await deleteDoc(rosterRef);
+}
+
+export async function addStudentToTeacherRoster(
+  rosterId: string,
+  studentId: string
+): Promise<void> {
+  await ensureAuthenticated();
+
+  const rosterRef = doc(
+    db,
+    TEACHER_ROSTERS_COLLECTION,
+    rosterId
+  );
+
+  const rosterSnap = await getDoc(rosterRef);
+
+  if (!rosterSnap.exists()) {
+    throw new Error('Roster not found.');
+  }
+
+  const data = rosterSnap.data();
+
+  const currentStudentIds: string[] =
+    Array.isArray(data.studentIds)
+      ? data.studentIds
+      : [];
+
+  if (!currentStudentIds.includes(studentId)) {
+    await updateDoc(rosterRef, {
+      studentIds: [
+        ...currentStudentIds,
+        studentId
+      ],
+      updatedAt: Date.now()
+    });
+  }
+}
+
+export async function removeStudentFromTeacherRoster(
+  rosterId: string,
+  studentId: string
+): Promise<void> {
+  await ensureAuthenticated();
+
+  const rosterRef = doc(
+    db,
+    TEACHER_ROSTERS_COLLECTION,
+    rosterId
+  );
+
+  const rosterSnap = await getDoc(rosterRef);
+
+  if (!rosterSnap.exists()) {
+    throw new Error('Roster not found.');
+  }
+
+  const data = rosterSnap.data();
+
+  const currentStudentIds: string[] =
+    Array.isArray(data.studentIds)
+      ? data.studentIds
+      : [];
+
+  await updateDoc(rosterRef, {
+    studentIds: currentStudentIds.filter(
+      (id) => id !== studentId
+    ),
+    updatedAt: Date.now()
+  });
+}
+
+export async function setTeacherRosterStudents(
+  rosterId: string,
+  studentIds: string[]
+): Promise<void> {
+  await ensureAuthenticated();
+
+  const rosterRef = doc(
+    db,
+    TEACHER_ROSTERS_COLLECTION,
+    rosterId
+  );
+
+  await updateDoc(rosterRef, {
+    studentIds: [...new Set(studentIds)],
+    updatedAt: Date.now()
+  });
 }
