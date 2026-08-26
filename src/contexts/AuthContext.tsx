@@ -78,15 +78,34 @@ const processAuthenticatedUser = async (user: User) => {
 
     let profile = await getUserProfile(user.uid);
 
-    if (!profile) {
+const emailLower = email.toLowerCase();
+
+const isAdminAccount =
+  emailLower === 'jaf2jc@bearworks.jackson.sparcc.org' ||
+  emailLower.includes('admin') ||
+  emailLower.startsWith('principal');
+
+if (isAdminAccount) {
+  profile = {
+    uid: user.uid,
+    email: user.email || '',
+    displayName:
+      user.displayName ||
+      user.email?.split('@')[0] ||
+      'JMMS Administrator',
+    photoURL: user.photoURL || undefined,
+    role: 'admin',
+    room: 'Main Administrative Office'
+  };
+
+  await saveUserProfile(profile);
+} else if (!profile) {
       let role: UserRole | null = null;
       let teacherDocId: string | undefined;
       let studentId: string | undefined;
       let studentDocId: string | undefined;
       let room: string | undefined;
       let grade: number | undefined;
-
-      const emailLower = email.toLowerCase();
 
 // DETERMINE USER ROLE
 if (
