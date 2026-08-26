@@ -97,3 +97,12 @@ export interface PassStatistics {
   passesByDestination: Record<string, number>;
   passesByHour: Record<string, number>;
 }
+export interface Roster {
+  id: string;
+  teacherId: string;
+  teacherName: string;
+  name: string;
+  studentIds: string[];
+  createdAt: number;
+  updatedAt: number;
+}
