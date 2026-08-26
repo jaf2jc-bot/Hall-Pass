@@ -97,7 +97,7 @@ function MainApp() {
     setDetailModalStudent(student);
   };
 
-  if (isLoading) {
+  if (isLoading || currentRole === null) {
     return (
       <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
         <div className="bg-white p-8 rounded-2xl shadow-xl border-2 border-purple-200 text-center max-w-sm w-full space-y-4">
