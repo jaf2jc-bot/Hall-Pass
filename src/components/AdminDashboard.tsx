@@ -1,22 +1,18 @@
 import React, { useState } from 'react';
 import { 
   Shield, 
-  Users, 
-  UserCheck, 
+  Users,  
   Clock, 
   History, 
   BarChart3, 
   Plus, 
-  Trash2, 
-  Edit3, 
+  Trash2,  
   CheckCircle2, 
-  AlertCircle, 
-  Download, 
+  AlertCircle,  
   RefreshCw, 
   Search, 
   TrendingUp,
   School,
-  Sparkles
 } from 'lucide-react';
 import { Student, Teacher, HallPass } from '../types';
 import { addStudent, updateStudent, deleteStudent, addTeacher, updateTeacher, deleteTeacher, seedInitialJMMSData } from '../lib/firebase';
