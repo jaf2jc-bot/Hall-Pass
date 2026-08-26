@@ -97,9 +97,7 @@ if (
   role = 'admin';
   room = 'Main Administrative Office';
 } else {
-  // New school accounts default to student,
-// but DO NOT overwrite an admin role determined above.
-if (!role) {
+  // All other new school accounts default to student.
   role = 'student';
 }
 
