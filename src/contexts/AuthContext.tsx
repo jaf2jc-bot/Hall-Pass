@@ -3,8 +3,7 @@ import { UserProfile, UserRole, Student, Teacher } from '../types';
 import { 
   auth,
   signInWithGoogle, 
-  signOutFromApp, 
-  ensureAuthenticated, 
+  signOutFromApp,  
   getUserProfile, 
   saveUserProfile, 
   subscribeToStudents, 
@@ -176,9 +175,12 @@ if (
       }
     }
   } else {
-    if (!currentUser) {
-      await ensureAuthenticated();
-    }
+    // No authenticated Google user yet.
+    // Do NOT attempt anonymous authentication.
+    setCurrentUser(null);
+    setCurrentRole('student');
+    setActiveStudent(null);
+    setActiveTeacher(null);
   }
 
   setIsLoading(false);
@@ -188,19 +190,23 @@ const unsubAuth = onAuthStateChanged(auth, async (user) => {
   await processAuthenticatedUser(user);
 });
 
-    // Subscribe to teachers directory (readable by all roles for destination selection)
-unsubTeachers = subscribeToTeachers((teacherList) => {
-  setTeachers(teacherList);
-});
+// Only subscribe to school data after authentication is complete
+    if (auth.currentUser) {
 
-    // Subscribe to student roster (teachers & admins)
- unsubStudents = subscribeToStudents((studentList) => {
-  setStudents(studentList);
+      // Subscribe to teachers directory
+      unsubTeachers = subscribeToTeachers((teacherList) => {
+        setTeachers(teacherList);
+      });
 
-  if (studentList.length === 0) {
-    seedInitialJMMSData().catch(console.error);
-  }
-});
+      // Subscribe to student roster
+      unsubStudents = subscribeToStudents((studentList) => {
+        setStudents(studentList);
+
+        if (studentList.length === 0) {
+          seedInitialJMMSData().catch(console.error);
+        }
+      });
+    }
 
     return () => {
       unsubAuth();
