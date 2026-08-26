@@ -25,7 +25,7 @@ import {
   User
 } from 'firebase/auth';
 import firebaseConfigData from '../../firebase-applet-config.json';
-import { HallPass, Student, Teacher, DestinationType, UserProfile } from '../types';
+import { HallPass, Student, Teacher, DestinationType, UserProfile, UserRole } from '../types';
 import { INITIAL_JMMS_STUDENTS, INITIAL_JMMS_TEACHERS } from './seedData';
 
 // Ensure Firebase is initialized
@@ -90,7 +90,50 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
     updatedAt: Date.now()
   }, { merge: true });
 }
+export function subscribeToUserProfiles(
+  callback: (users: UserProfile[]) => void
+) {
+  const q = collection(db, USERS_COLLECTION);
 
+  return onSnapshot(q, (snapshot) => {
+    const list: UserProfile[] = [];
+
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+
+      list.push({
+        ...(data as UserProfile),
+        uid: data.uid || docSnap.id,
+        email: data.email || '',
+        displayName: data.displayName || data.email || 'JMMS User',
+        role: data.role || 'student',
+      });
+    });
+
+    list.sort((a, b) =>
+      a.displayName.localeCompare(b.displayName)
+    );
+
+    callback(list);
+  }, (err) => {
+    console.error('Error subscribing to user profiles:', err);
+  });
+}
+export async function updateUserRole(
+  uid: string,
+  role: UserRole
+): Promise<void> {
+  const userDocRef = doc(db, USERS_COLLECTION, uid);
+
+  await setDoc(
+    userDocRef,
+    {
+      role,
+      updatedAt: Date.now()
+    },
+    { merge: true }
+  );
+}
 // Sign in anonymously fallback for initial load/preview if not signed in
 export const ensureAuthenticated = async (): Promise<User> => {
   return new Promise((resolve) => {
