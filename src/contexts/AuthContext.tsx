@@ -208,21 +208,45 @@ unsubTeachers = subscribeToTeachers((teacherList) => {
     };
   }, []);
 
-  // Update default active student/teacher for demo / student mode
-  useEffect(() => {
-    if (students.length > 0 && !activeStudent && currentRole === 'student') {
-      const firstActive = students.find(s => s.active) || students[0];
-      if (firstActive) {
-        selectStudent(firstActive);
-      }
+ // Update default active student/teacher only after authentication
+// has finished determining the user's actual role.
+useEffect(() => {
+  if (isLoading) return;
+
+  if (
+    students.length > 0 &&
+    !activeStudent &&
+    currentRole === 'student' &&
+    currentUser?.role === 'student'
+  ) {
+    const firstActive = students.find(s => s.active) || students[0];
+
+    if (firstActive) {
+      selectStudent(firstActive);
     }
-    if (teachers.length > 0 && !activeTeacher && currentRole === 'teacher') {
-      const firstTeacher = teachers.find(t => t.active) || teachers[0];
-      if (firstTeacher) {
-        selectTeacher(firstTeacher);
-      }
+  }
+
+  if (
+    teachers.length > 0 &&
+    !activeTeacher &&
+    currentRole === 'teacher' &&
+    currentUser?.role === 'teacher'
+  ) {
+    const firstTeacher = teachers.find(t => t.active) || teachers[0];
+
+    if (firstTeacher) {
+      selectTeacher(firstTeacher);
     }
-  }, [students, teachers, currentRole]);
+  }
+}, [
+  students,
+  teachers,
+  currentRole,
+  currentUser,
+  activeStudent,
+  activeTeacher,
+  isLoading
+]);
 
   const loginWithGoogle = async (): Promise<boolean> => {
     try {
