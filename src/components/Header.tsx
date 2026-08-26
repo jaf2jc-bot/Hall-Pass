@@ -139,8 +139,8 @@ export const Header: React.FC<HeaderProps> = ({
   ];
 
   const visibleNavItems = allNavItems.filter(
-  (item) => currentRole && item.roles.includes(currentRole)
-);
+    (item) => item.roles.includes(currentRole)
+  );
 
   // ============================================================
   // HEADER
