@@ -88,20 +88,17 @@ const processAuthenticatedUser = async (user: User) => {
 
       const emailLower = email.toLowerCase();
 
-      // ADMIN
-      if (
-        emailLower === 'jaf2jc@bearworks.jackson.sparcc.org' ||
-        emailLower.includes('admin') ||
-        emailLower.startsWith('principal')
-      ) {
-        role = 'admin';
-        room = 'Main Administrative Office';
-      }
-
-      // ALL NEW SCHOOL ACCOUNTS DEFAULT TO STUDENT
-      // Admins are handled above.
-      // Teachers are promoted manually by an administrator.
-     if (!role) {
+// DETERMINE USER ROLE
+if (
+  emailLower === 'jaf2jc@bearworks.jackson.sparcc.org' ||
+  emailLower.includes('admin') ||
+  emailLower.startsWith('principal')
+) {
+  role = 'admin';
+  room = 'Main Administrative Office';
+} else {
+  // All other new school accounts start as students.
+  // Teachers can be promoted manually by an administrator.
   role = 'student';
 }
 
