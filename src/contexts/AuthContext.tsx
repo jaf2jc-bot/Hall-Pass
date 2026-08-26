@@ -101,7 +101,9 @@ const processAuthenticatedUser = async (user: User) => {
       // ALL NEW SCHOOL ACCOUNTS DEFAULT TO STUDENT
       // Admins are handled above.
       // Teachers are promoted manually by an administrator.
-      role = 'student';
+     if (!role) {
+  role = 'student';
+}
 
       // If this email already exists in the student roster,
       // associate the new user profile with that student.
