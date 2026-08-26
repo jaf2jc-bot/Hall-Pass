@@ -17,7 +17,7 @@ import { onAuthStateChanged, User } from 'firebase/auth';
 interface AuthContextType {
   firebaseUser: User | null;
   currentUser: UserProfile | null;
-  currentRole: UserRole;
+  currentRole: UserRole | null;
   setRole: (role: UserRole) => void;
   students: Student[];
   teachers: Teacher[];
@@ -39,7 +39,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
-  const [currentRole, setCurrentRole] = useState<UserRole>('student');
+  const [currentRole, setCurrentRole] = useState<UserRole | null>(null);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [students, setStudents] = useState<Student[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -47,6 +47,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [activeTeacher, setActiveTeacher] = useState<Teacher | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [authReady, setAuthReady] = useState(false);
 
   // 1. Listen for Auth State Changes
   useEffect(() => {
@@ -208,45 +209,7 @@ unsubTeachers = subscribeToTeachers((teacherList) => {
     };
   }, []);
 
- // Update default active student/teacher only after authentication
-// has finished determining the user's actual role.
-useEffect(() => {
-  if (isLoading) return;
 
-  if (
-    students.length > 0 &&
-    !activeStudent &&
-    currentRole === 'student' &&
-    currentUser?.role === 'student'
-  ) {
-    const firstActive = students.find(s => s.active) || students[0];
-
-    if (firstActive) {
-      selectStudent(firstActive);
-    }
-  }
-
-  if (
-    teachers.length > 0 &&
-    !activeTeacher &&
-    currentRole === 'teacher' &&
-    currentUser?.role === 'teacher'
-  ) {
-    const firstTeacher = teachers.find(t => t.active) || teachers[0];
-
-    if (firstTeacher) {
-      selectTeacher(firstTeacher);
-    }
-  }
-}, [
-  students,
-  teachers,
-  currentRole,
-  currentUser,
-  activeStudent,
-  activeTeacher,
-  isLoading
-]);
 
   const loginWithGoogle = async (): Promise<boolean> => {
     try {
@@ -343,12 +306,15 @@ useEffect(() => {
     }
   };
 
-  const logout = async () => {
-    await signOutFromApp();
-    if (students.length > 0) {
-      selectStudent(students[0]);
-    }
-  };
+ const logout = async () => {
+  setAuthReady(false);
+  setCurrentRole(null);
+  setCurrentUser(null);
+  setActiveStudent(null);
+  setActiveTeacher(null);
+
+  await signOutFromApp();
+};
 
   const seedData = async () => {
     setIsLoading(true);
