@@ -338,7 +338,6 @@ function MainApp() {
         isOpen={isRequestModalOpen}
         onClose={() => setIsRequestModalOpen(false)}
         students={students}
-        teachers={teachers}
         preSelectedStudent={requestModalStudent}
         activeTeacher={activeTeacher}
         activePasses={activePasses}
