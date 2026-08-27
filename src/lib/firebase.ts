@@ -608,8 +608,9 @@ export async function requestHallPass(params: {
   studentId: string;
   studentName: string;
   studentEmail?: string;
-  teacher: string;
-  teacherRoom?: string;
+teacher: string;
+teacherUid: string;
+teacherRoom?: string;
   destination: DestinationType;
   destinationDetails?: string;
   createdBy?: 'student' | 'teacher' | 'admin';
@@ -635,8 +636,9 @@ export async function requestHallPass(params: {
     studentId: params.studentId,
     studentName: params.studentName,
     studentEmail: params.studentEmail,
-    teacher: params.teacher,
-    teacherRoom: params.teacherRoom || '',
+teacher: params.teacher,
+teacherUid: params.teacherUid,
+teacherRoom: params.teacherRoom || '',
     destination: params.destination,
     destinationDetails: params.destinationDetails || '',
     status: 'ACTIVE',
