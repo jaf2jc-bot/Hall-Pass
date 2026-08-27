@@ -23,7 +23,6 @@ interface RequestPassModalProps {
   isOpen: boolean;
   onClose: () => void;
   students: Student[];
-  teachers: Teacher[];
   preSelectedStudent?: Student | null;
   activeTeacher?: Teacher | null;
   activePasses: HallPass[];
@@ -34,7 +33,6 @@ export const RequestPassModal: React.FC<RequestPassModalProps> = ({
   isOpen,
   onClose,
   students,
-  teachers,
   preSelectedStudent,
   activeTeacher,
   activePasses,
