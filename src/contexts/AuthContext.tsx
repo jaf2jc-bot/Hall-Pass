@@ -192,7 +192,7 @@ if (
     // No authenticated Google user yet.
     // Do NOT attempt anonymous authentication.
     setCurrentUser(null);
-    setCurrentRole('student');
+    setCurrentRole(null);
     setActiveStudent(null);
     setActiveTeacher(null);
   }
@@ -235,43 +235,13 @@ const unsubAuth = onAuthStateChanged(auth, async (user) => {
     }
   };
 
-  const selectStudent = (student: Student) => {
-    setActiveStudent(student);
-    setCurrentRole('student');
-    const profile: UserProfile = {
-      uid: firebaseUser ? firebaseUser.uid : `student-${student.studentId}`,
-      email: student.email || `${student.firstName.toLowerCase()}.${student.lastName.toLowerCase()}@bearworks.jackson.sparcc.org`,
-      displayName: `${student.firstName} ${student.lastName}`,
-      photoURL: firebaseUser?.photoURL || undefined,
-      role: 'student',
-      studentId: student.studentId,
-      studentDocId: student.id,
-      grade: student.grade,
-      room: student.homeroom
-    };
-    setCurrentUser(profile);
-    if (firebaseUser && !firebaseUser.isAnonymous) {
-      saveUserProfile(profile).catch(console.error);
-    }
-  };
+ const selectStudent = (student: Student) => {
+  setActiveStudent(student);
+};
 
-  const selectTeacher = (teacher: Teacher) => {
-    setActiveTeacher(teacher);
-    setCurrentRole('teacher');
-    const profile: UserProfile = {
-      uid: firebaseUser ? firebaseUser.uid : `teacher-${teacher.id}`,
-      email: teacher.email,
-      displayName: teacher.name,
-      photoURL: firebaseUser?.photoURL || undefined,
-      role: 'teacher',
-      teacherDocId: teacher.id,
-      room: teacher.room
-    };
-    setCurrentUser(profile);
-    if (firebaseUser && !firebaseUser.isAnonymous) {
-      saveUserProfile(profile).catch(console.error);
-    }
-  };
+const selectTeacher = (teacher: Teacher) => {
+  setActiveTeacher(teacher);
+};
 
   const loginAsAdmin = () => {
     setCurrentRole('admin');
@@ -299,16 +269,25 @@ const unsubAuth = onAuthStateChanged(auth, async (user) => {
     return false;
   };
 
-  const setRole = (role: UserRole) => {
-    setCurrentRole(role);
-    if (role === 'admin') {
-      loginAsAdmin();
-    } else if (role === 'teacher' && teachers.length > 0) {
-      selectTeacher(activeTeacher || teachers[0]);
-    } else if (role === 'student' && students.length > 0) {
-      selectStudent(activeStudent || students[0]);
+const setRole = (role: UserRole) => {
+  setCurrentRole(role);
+
+  if (role === 'admin') {
+    loginAsAdmin();
+  } else if (role === 'teacher') {
+    if (activeTeacher) {
+      setActiveTeacher(activeTeacher);
+    } else if (teachers.length > 0) {
+      setActiveTeacher(teachers[0]);
     }
-  };
+  } else if (role === 'student') {
+    if (activeStudent) {
+      setActiveStudent(activeStudent);
+    } else if (students.length > 0) {
+      setActiveStudent(students[0]);
+    }
+  }
+};
 
  const logout = async () => {
   setAuthReady(false);
