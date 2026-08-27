@@ -55,6 +55,8 @@ export const CurrentlyOutDashboard: React.FC<CurrentlyOutDashboardProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   
+  const previousConflictCount = React.useRef(0);
+  
 // Conflict pairs managed from the Admin Dashboard
 const [conflictPairs, setConflictPairs] = useState<ConflictPair[]>([]);
   
@@ -126,6 +128,18 @@ const conflictAlerts = conflictPairs
       student2: HallPass;
     } => alert !== null
   );
+
+// Play an alert when a new conflict appears
+useEffect(() => {
+  if (
+    soundEnabled &&
+    conflictAlerts.length > previousConflictCount.current
+  ) {
+    playNotificationTone('start');
+  }
+
+  previousConflictCount.current = conflictAlerts.length;
+}, [conflictAlerts.length, soundEnabled]);
   
   // End pass action from teacher/staff monitor
   const handleMarkReturned = async (pass: HallPass) => {
