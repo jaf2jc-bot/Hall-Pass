@@ -25,7 +25,15 @@ import {
   User
 } from 'firebase/auth';
 import firebaseConfigData from '../../firebase-applet-config.json';
-import { HallPass, Student, Teacher, DestinationType, UserProfile, UserRole } from '../types';
+import {
+  HallPass,
+  Student,
+  Teacher,
+  DestinationType,
+  UserProfile,
+  UserRole,
+  ConflictPair
+} from '../types';
 import { INITIAL_JMMS_STUDENTS, INITIAL_JMMS_TEACHERS } from './seedData';
 
 // Ensure Firebase is initialized
@@ -51,6 +59,7 @@ export const USERS_COLLECTION = 'users';
 export const STUDENTS_COLLECTION = 'students';
 export const TEACHERS_COLLECTION = 'teachers';
 export const HALL_PASSES_COLLECTION = 'hallPasses';
+export const CONFLICT_PAIRS_COLLECTION = 'conflictPairs';
 
 // Google Workspace domain restriction
 export const ALLOWED_DOMAIN = 'bearworks.jackson.sparcc.org';
@@ -134,6 +143,105 @@ export async function updateUserRole(
     { merge: true }
   );
 }
+
+// ==========================================
+// STUDENT CONFLICT PAIRS
+// ==========================================
+
+export async function addConflictPair(
+  student1: Student,
+  student2: Student
+): Promise<string> {
+  await ensureAuthenticated();
+
+  if (student1.studentId === student2.studentId) {
+    throw new Error('A student cannot be paired with themselves.');
+  }
+
+  // Store the IDs in a consistent order so
+  // Mason + Tyler is the same pair as Tyler + Mason.
+  const [first, second] =
+    student1.studentId < student2.studentId
+      ? [student1, student2]
+      : [student2, student1];
+
+  // Prevent duplicate pairs.
+  const existingQuery = query(
+    collection(db, CONFLICT_PAIRS_COLLECTION),
+    where('studentId1', '==', first.studentId),
+    where('studentId2', '==', second.studentId)
+  );
+
+  const existing = await getDocs(existingQuery);
+
+  if (!existing.empty) {
+    throw new Error(
+      `${first.firstName} ${first.lastName} and ${second.firstName} ${second.lastName} are already a conflict pair.`
+    );
+  }
+
+  const docRef = await addDoc(
+    collection(db, CONFLICT_PAIRS_COLLECTION),
+    {
+      studentId1: first.studentId,
+      studentId2: second.studentId,
+      studentName1: `${first.firstName} ${first.lastName}`,
+      studentName2: `${second.firstName} ${second.lastName}`,
+      createdAt: Date.now()
+    }
+  );
+
+  return docRef.id;
+}
+
+export async function deleteConflictPair(
+  conflictPairId: string
+): Promise<void> {
+  await ensureAuthenticated();
+
+  await deleteDoc(
+    doc(db, CONFLICT_PAIRS_COLLECTION, conflictPairId)
+  );
+}
+
+export function subscribeToConflictPairs(
+  callback: (pairs: ConflictPair[]) => void
+) {
+  const q = collection(db, CONFLICT_PAIRS_COLLECTION);
+
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const list: ConflictPair[] = [];
+
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+
+        list.push({
+          id: docSnap.id,
+          studentId1: data.studentId1 || '',
+          studentId2: data.studentId2 || '',
+          studentName1: data.studentName1 || '',
+          studentName2: data.studentName2 || '',
+          createdAt: Number(data.createdAt) || Date.now()
+        });
+      });
+
+      list.sort((a, b) =>
+        a.studentName1.localeCompare(b.studentName1)
+      );
+
+      callback(list);
+    },
+    (err) => {
+      console.error(
+        'Error subscribing to conflict pairs:',
+        err
+      );
+    }
+  );
+}
+
 // Sign in anonymously fallback for initial load/preview if not signed in
 export const ensureAuthenticated = async (): Promise<User> => {
   return new Promise((resolve) => {
