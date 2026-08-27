@@ -20,7 +20,8 @@ import {
   HelpCircle,
   Flag,
   UserX,
-  Plus
+  Plus,
+  X
 } from 'lucide-react';
 import { HallPass, DestinationType, Teacher } from '../types';
 import { endHallPass, flagHallPass } from '../lib/firebase';
@@ -44,7 +45,17 @@ export const CurrentlyOutDashboard: React.FC<CurrentlyOutDashboardProps> = ({
   const [filterTeacher, setFilterTeacher] = useState<string>('ALL');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
-
+  
+// Students who should trigger an alert if they are both
+// in the hallway at the same time.
+//
+// Use STUDENT IDs here, not names.
+const CONFLICT_PAIRS: [string, string][] = [
+  // Example:
+  // ['80124', '80135'],
+  // ['80124', '80142'],
+];
+  
   // Live timer tick every second for smooth, real-time counters
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -73,6 +84,38 @@ export const CurrentlyOutDashboard: React.FC<CurrentlyOutDashboardProps> = ({
   });
   const normalPasses = activePasses.filter((p) => (Date.now() - p.timeOut) < 7 * 60 * 1000);
 
+  // ============================================================
+// STUDENT CONFLICT DETECTION
+// ============================================================
+
+const conflictAlerts = CONFLICT_PAIRS
+  .map(([studentId1, studentId2]) => {
+    const pass1 = activePasses.find(
+      (pass) => pass.studentId === studentId1
+    );
+
+    const pass2 = activePasses.find(
+      (pass) => pass.studentId === studentId2
+    );
+
+    if (!pass1 || !pass2) {
+      return null;
+    }
+
+    return {
+      student1: pass1,
+      student2: pass2
+    };
+  })
+  .filter(
+    (
+      alert
+    ): alert is {
+      student1: HallPass;
+      student2: HallPass;
+    } => alert !== null
+  );
+  
   // End pass action from teacher/staff monitor
   const handleMarkReturned = async (pass: HallPass) => {
     setActionLoadingId(pass.id);
@@ -108,6 +151,74 @@ export const CurrentlyOutDashboard: React.FC<CurrentlyOutDashboardProps> = ({
 
   return (
     <div className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 ${isFullscreen ? 'fixed inset-0 z-50 bg-slate-950 p-6 overflow-y-auto' : ''}`}>
+
+       {/* ========================================================
+          STUDENT CONFLICT ALERTS
+         ======================================================== */}
+      {conflictAlerts.length > 0 && (
+        <div className="space-y-3">
+          {conflictAlerts.map((alert) => (
+            <div
+              key={`${alert.student1.studentId}-${alert.student2.studentId}`}
+              className="bg-rose-50 border-2 border-rose-500 rounded-2xl p-4 sm:p-5 shadow-lg animate-pulse"
+            >
+              <div className="flex items-start gap-3">
+                <div className="shrink-0 w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-black text-rose-900">
+                      HALLWAY CONFLICT ALERT
+                    </h3>
+                  </div>
+
+                  <p className="text-sm font-semibold text-rose-800 mt-1">
+                    These students are currently in the hallway at the same time:
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                    <div className="bg-white rounded-xl border border-rose-200 p-3">
+                      <div className="font-bold text-slate-900">
+                        {alert.student1.studentName}
+                      </div>
+                      <div className="text-xs text-slate-500 mt-1">
+                        {alert.student1.destination}
+                        {alert.student1.destinationDetails
+                          ? ` • ${alert.student1.destinationDetails}`
+                          : ''}
+                      </div>
+                      <div className="text-xs text-slate-400 mt-1">
+                        Out since {formatTimeAmPm(alert.student1.timeOut)}
+                      </div>
+                    </div>
+
+                    <div className="bg-white rounded-xl border border-rose-200 p-3">
+                      <div className="font-bold text-slate-900">
+                        {alert.student2.studentName}
+                      </div>
+                      <div className="text-xs text-slate-500 mt-1">
+                        {alert.student2.destination}
+                        {alert.student2.destinationDetails
+                          ? ` • ${alert.student2.destinationDetails}`
+                          : ''}
+                      </div>
+                      <div className="text-xs text-slate-400 mt-1">
+                        Out since {formatTimeAmPm(alert.student2.timeOut)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="shrink-0 text-rose-600">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       
       {/* Top Banner & Quick Controls */}
       <div className="bg-gradient-to-r from-purple-950 via-purple-900 to-indigo-950 rounded-2xl p-5 sm:p-6 text-white shadow-xl border-2 border-amber-400/40 flex flex-col md:flex-row md:items-center justify-between gap-4">
