@@ -23,8 +23,17 @@ import {
   Plus,
   X
 } from 'lucide-react';
-import { HallPass, DestinationType, Teacher } from '../types';
-import { endHallPass, flagHallPass } from '../lib/firebase';
+import {
+  HallPass,
+  DestinationType,
+  Teacher,
+  ConflictPair
+} from '../types';
+import {
+  endHallPass,
+  flagHallPass,
+  subscribeToConflictPairs
+} from '../lib/firebase';
 import { formatElapsedTime, formatTimeAmPm, getPassUrgency, playNotificationTone, DESTINATION_LIST } from '../lib/constants';
 
 interface CurrentlyOutDashboardProps {
@@ -46,15 +55,8 @@ export const CurrentlyOutDashboard: React.FC<CurrentlyOutDashboardProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   
-// Students who should trigger an alert if they are both
-// in the hallway at the same time.
-//
-// Use STUDENT IDs here, not names.
-const CONFLICT_PAIRS: [string, string][] = [
-  // Example:
-  // ['80124', '80135'],
-  // ['80124', '80142'],
-];
+// Conflict pairs managed from the Admin Dashboard
+const [conflictPairs, setConflictPairs] = useState<ConflictPair[]>([]);
   
   // Live timer tick every second for smooth, real-time counters
   const [, setTick] = useState(0);
@@ -63,6 +65,15 @@ const CONFLICT_PAIRS: [string, string][] = [
     return () => clearInterval(interval);
   }, []);
 
+// Listen for hallway conflict pairs managed by the Admin Dashboard
+useEffect(() => {
+  const unsubscribe = subscribeToConflictPairs((pairs) => {
+    setConflictPairs(pairs);
+  });
+
+  return () => unsubscribe();
+}, []);
+  
   // Filtered passes
   const filteredPasses = activePasses.filter((pass) => {
     const matchesSearch = 
@@ -84,18 +95,18 @@ const CONFLICT_PAIRS: [string, string][] = [
   });
   const normalPasses = activePasses.filter((p) => (Date.now() - p.timeOut) < 7 * 60 * 1000);
 
-  // ============================================================
+// ============================================================
 // STUDENT CONFLICT DETECTION
 // ============================================================
 
-const conflictAlerts = CONFLICT_PAIRS
-  .map(([studentId1, studentId2]) => {
+const conflictAlerts = conflictPairs
+  .map((pair) => {
     const pass1 = activePasses.find(
-      (pass) => pass.studentId === studentId1
+      (pass) => pass.studentId === pair.studentId1
     );
 
     const pass2 = activePasses.find(
-      (pass) => pass.studentId === studentId2
+      (pass) => pass.studentId === pair.studentId2
     );
 
     if (!pass1 || !pass2) {
