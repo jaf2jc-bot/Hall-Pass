@@ -193,21 +193,24 @@ await requestHallPass({
           </div>
 
           {/* Authorizing Teacher */}
-          <div>
-            <label className="block font-bold text-slate-800 mb-1">Authorizing Teacher *</label>
-            <select
-              value={selectedTeacherName}
-              onChange={(e) => setSelectedTeacherName(e.target.value)}
-              required
-              className="w-full p-2.5 rounded-xl border-2 border-slate-200 focus:border-purple-600 outline-none font-medium bg-white text-slate-800"
-            >
-              {teachers.map((t) => (
-                <option key={t.id} value={t.name}>
-                  {t.name} — {t.room}
-                </option>
-              ))}
-            </select>
-          </div>
+<div>
+  <label className="block font-bold text-slate-800 mb-1">
+    Authorizing Teacher
+  </label>
+
+  <div className="w-full p-2.5 rounded-xl border-2 border-slate-200 bg-slate-50 text-slate-800 font-medium">
+    {activeTeacher ? (
+      <>
+        {activeTeacher.name}
+        {activeTeacher.room ? ` — ${activeTeacher.room}` : ''}
+      </>
+    ) : (
+      <span className="text-rose-600">
+        Unable to identify logged-in teacher
+      </span>
+    )}
+  </div>
+</div>
 
           {/* Optional reason / details */}
           <div>
