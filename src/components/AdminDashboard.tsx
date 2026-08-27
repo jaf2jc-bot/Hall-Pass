@@ -478,6 +478,16 @@ const handleToggleTeacherRole = async (user: UserProfile) => {
 >
   User Accounts ({users.length})
 </button>
+        <button
+  onClick={() => setAdminTab('conflicts')}
+  className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition ${
+    adminTab === 'conflicts'
+      ? 'bg-purple-950 text-amber-300 shadow-md'
+      : 'text-slate-600 hover:bg-slate-100'
+  }`}
+>
+  Hallway Conflicts ({conflictPairs.length})
+</button>
       </div>
 
       {/* TAB 1: ANALYTICS & CHARTS */}
@@ -553,6 +563,309 @@ const handleToggleTeacherRole = async (user: UserProfile) => {
         </div>
       )}
 
+      {/* ========================================================
+    TAB 5: HALLWAY CONFLICT MANAGEMENT
+   ======================================================== */}
+{adminTab === 'conflicts' && (
+  <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-md space-y-5">
+
+    {/* Header */}
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+      <div>
+        <h3 className="text-lg font-bold text-purple-950 flex items-center gap-2">
+          <UserX className="w-5 h-5 text-rose-600" />
+          Hallway Conflict Pairs
+        </h3>
+
+        <p className="text-xs text-slate-500 mt-1">
+          Staff will receive an alert when both students in a pair
+          are simultaneously out of class.
+        </p>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => setShowAddConflictPair(true)}
+        className="px-4 py-2 rounded-xl bg-purple-950 text-amber-300 text-xs font-bold hover:bg-purple-900 transition flex items-center justify-center gap-2"
+      >
+        <Plus className="w-4 h-4" />
+        Add Conflict Pair
+      </button>
+    </div>
+
+    {/* Existing Conflict Pairs */}
+    {conflictPairs.length === 0 ? (
+      <div className="py-12 text-center">
+        <UserX className="w-12 h-12 mx-auto text-slate-300 mb-3" />
+
+        <h4 className="font-bold text-slate-700">
+          No Conflict Pairs Set
+        </h4>
+
+        <p className="text-xs text-slate-400 mt-1">
+          Add students who should trigger an alert when they are
+          both in the hallway.
+        </p>
+      </div>
+    ) : (
+      <div className="space-y-3">
+        {conflictPairs.map((pair) => (
+          <div
+            key={pair.id}
+            className="border border-rose-200 bg-rose-50/50 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center">
+                <UserX className="w-5 h-5" />
+              </div>
+
+              <div>
+                <div className="font-bold text-slate-900">
+                  {pair.studentName1}
+                </div>
+
+                <div className="text-xs text-slate-400 font-bold my-0.5">
+                  SHOULD NOT BE OUT WITH
+                </div>
+
+                <div className="font-bold text-slate-900">
+                  {pair.studentName2}
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              disabled={isProcessing}
+              onClick={async () => {
+                if (
+                  !window.confirm(
+                    `Remove the hallway conflict between ${pair.studentName1} and ${pair.studentName2}?`
+                  )
+                ) {
+                  return;
+                }
+
+                setIsProcessing(true);
+
+                try {
+                  await deleteConflictPair(pair.id);
+
+                  setFeedback({
+                    type: 'success',
+                    message: `Conflict pair removed: ${pair.studentName1} and ${pair.studentName2}.`
+                  });
+                } catch (err: unknown) {
+                  const error = err as Error;
+
+                  setFeedback({
+                    type: 'error',
+                    message:
+                      error.message ||
+                      'Failed to remove conflict pair.'
+                  });
+                } finally {
+                  setIsProcessing(false);
+                }
+              }}
+              className="px-3 py-2 rounded-lg bg-white border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-100 transition"
+            >
+              <Trash2 className="w-4 h-4 inline mr-1" />
+              Remove
+            </button>
+          </div>
+        ))}
+      </div>
+    )}
+
+    {/* Add Conflict Pair */}
+    {showAddConflictPair && (
+      <div className="border-t border-slate-200 pt-5">
+        <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200">
+
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h4 className="font-bold text-purple-950">
+                Add Hallway Conflict Pair
+              </h4>
+
+              <p className="text-xs text-slate-500 mt-1">
+                Select the two students who should trigger an alert
+                when they are both out.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowAddConflictPair(false);
+                setConflictStudent1('');
+                setConflictStudent2('');
+              }}
+              className="text-slate-400 hover:text-slate-700 text-xl"
+            >
+              ×
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+            {/* Student 1 */}
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1">
+                Student 1
+              </label>
+
+              <select
+                value={conflictStudent1}
+                onChange={(e) => setConflictStudent1(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm outline-none focus:border-purple-600"
+              >
+                <option value="">
+                  Select student...
+                </option>
+
+                {students
+                  .filter(
+                    (student) =>
+                      student.studentId !== conflictStudent2
+                  )
+                  .map((student) => (
+                    <option
+                      key={student.studentId}
+                      value={student.studentId}
+                    >
+                      {student.firstName} {student.lastName} — {student.studentId}
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            {/* Student 2 */}
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1">
+                Student 2
+              </label>
+
+              <select
+                value={conflictStudent2}
+                onChange={(e) => setConflictStudent2(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm outline-none focus:border-purple-600"
+              >
+                <option value="">
+                  Select student...
+                </option>
+
+                {students
+                  .filter(
+                    (student) =>
+                      student.studentId !== conflictStudent1
+                  )
+                  .map((student) => (
+                    <option
+                      key={student.studentId}
+                      value={student.studentId}
+                    >
+                      {student.firstName} {student.lastName} — {student.studentId}
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+          </div>
+
+          {/* Buttons */}
+          <div className="flex justify-end gap-2 mt-4">
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowAddConflictPair(false);
+                setConflictStudent1('');
+                setConflictStudent2('');
+              }}
+              className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-200"
+            >
+              Cancel
+            </button>
+
+            <button
+              type="button"
+              disabled={isProcessing}
+              onClick={async () => {
+                if (!conflictStudent1 || !conflictStudent2) {
+                  setFeedback({
+                    type: 'error',
+                    message: 'Please select two students.'
+                  });
+                  return;
+                }
+
+                if (conflictStudent1 === conflictStudent2) {
+                  setFeedback({
+                    type: 'error',
+                    message: 'Please select two different students.'
+                  });
+                  return;
+                }
+
+                const student1 = students.find(
+                  (student) =>
+                    student.studentId === conflictStudent1
+                );
+
+                const student2 = students.find(
+                  (student) =>
+                    student.studentId === conflictStudent2
+                );
+
+                if (!student1 || !student2) {
+                  setFeedback({
+                    type: 'error',
+                    message: 'Could not find both students.'
+                  });
+                  return;
+                }
+
+                setIsProcessing(true);
+
+                try {
+                  await addConflictPair(student1, student2);
+
+                  setFeedback({
+                    type: 'success',
+                    message: `${student1.firstName} ${student1.lastName} and ${student2.firstName} ${student2.lastName} are now a hallway conflict pair.`
+                  });
+
+                  setConflictStudent1('');
+                  setConflictStudent2('');
+                  setShowAddConflictPair(false);
+                } catch (err: unknown) {
+                  const error = err as Error;
+
+                  setFeedback({
+                    type: 'error',
+                    message:
+                      error.message ||
+                      'Failed to add conflict pair.'
+                  });
+                } finally {
+                  setIsProcessing(false);
+                }
+              }}
+              className="px-4 py-2 rounded-xl bg-purple-950 text-amber-300 text-xs font-bold hover:bg-purple-900 disabled:opacity-50"
+            >
+              {isProcessing ? 'Saving...' : 'Add Conflict Pair'}
+            </button>
+
+          </div>
+        </div>
+      </div>
+    )}
+
+  </div>
+)}
+      
       {/* TAB 2: STUDENT MANAGEMENT */}
       {adminTab === 'students' && (
         <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-md space-y-4">
