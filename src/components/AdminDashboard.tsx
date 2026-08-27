@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Shield, 
   Users,  
@@ -13,8 +13,9 @@ import {
   Search, 
   TrendingUp,
   School,
+  UserX,
 } from 'lucide-react';
-import { Student, Teacher, HallPass, UserProfile } from '../types';
+import { Student, Teacher, HallPass, UserProfile, ConflictPair } from '../types';
 import {
   addStudent,
   updateStudent,
@@ -25,7 +26,10 @@ import {
   seedInitialJMMSData,
   subscribeToUserProfiles,
   updateUserRole,
-  saveUserProfile
+  saveUserProfile,
+  subscribeToConflictPairs,
+  addConflictPair,
+  deleteConflictPair
 } from '../lib/firebase';
 import { computeStatistics, DESTINATIONS, formatElapsedTime, formatTimeAmPm } from '../lib/constants';
 
@@ -46,11 +50,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onOpenStudentDetail,
   onOpenHistoryTab
 }) => {
-  const [adminTab, setAdminTab] = useState<'analytics' | 'students' | 'teachers' | 'users'>('analytics');
-  const [studentSearch, setStudentSearch] = useState('');
-  const [teacherSearch, setTeacherSearch] = useState('');
-  const [users, setUsers] = useState<UserProfile[]>([]);
-  const [userSearch, setUserSearch] = useState('');
+const [adminTab, setAdminTab] = useState<
+  'analytics' | 'students' | 'teachers' | 'users' | 'conflicts'
+>('analytics');
+
+const [studentSearch, setStudentSearch] = useState('');
+const [teacherSearch, setTeacherSearch] = useState('');
+const [users, setUsers] = useState<UserProfile[]>([]);
+const [userSearch, setUserSearch] = useState('');
+
+// Hallway Conflict Pair State
+const [conflictPairs, setConflictPairs] = useState<ConflictPair[]>([]);
+const [showAddConflictPair, setShowAddConflictPair] = useState(false);
+const [conflictStudent1, setConflictStudent1] = useState('');
+const [conflictStudent2, setConflictStudent2] = useState('');
 
   // Add Student Modal State
   const [showAddStudentModal, setShowAddStudentModal] = useState(false);
@@ -78,6 +91,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 React.useEffect(() => {
   const unsubscribe = subscribeToUserProfiles((userList) => {
     setUsers(userList);
+  });
+
+  return () => unsubscribe();
+}, []);
+
+  // Real-time hallway conflict pair listener
+useEffect(() => {
+  const unsubscribe = subscribeToConflictPairs((pairs) => {
+    setConflictPairs(pairs);
   });
 
   return () => unsubscribe();
