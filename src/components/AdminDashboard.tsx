@@ -14,8 +14,19 @@ import {
   TrendingUp,
   School,
 } from 'lucide-react';
-import { Student, Teacher, HallPass } from '../types';
-import { addStudent, updateStudent, deleteStudent, addTeacher, updateTeacher, deleteTeacher, seedInitialJMMSData } from '../lib/firebase';
+import { Student, Teacher, HallPass, UserProfile } from '../types';
+import {
+  addStudent,
+  updateStudent,
+  deleteStudent,
+  addTeacher,
+  updateTeacher,
+  deleteTeacher,
+  seedInitialJMMSData,
+  subscribeToUserProfiles,
+  updateUserRole,
+  saveUserProfile
+} from '../lib/firebase';
 import { computeStatistics, DESTINATIONS, formatElapsedTime, formatTimeAmPm } from '../lib/constants';
 
 interface AdminDashboardProps {
@@ -35,9 +46,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onOpenStudentDetail,
   onOpenHistoryTab
 }) => {
-  const [adminTab, setAdminTab] = useState<'analytics' | 'students' | 'teachers'>('analytics');
+  const [adminTab, setAdminTab] = useState<'analytics' | 'students' | 'teachers' | 'users'>('analytics');
   const [studentSearch, setStudentSearch] = useState('');
   const [teacherSearch, setTeacherSearch] = useState('');
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [userSearch, setUserSearch] = useState('');
 
   // Add Student Modal State
   const [showAddStudentModal, setShowAddStudentModal] = useState(false);
@@ -61,6 +74,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
 
   const stats = computeStatistics(allPasses);
+  // Subscribe to all registered user profiles
+React.useEffect(() => {
+  const unsubscribe = subscribeToUserProfiles((userList) => {
+    setUsers(userList);
+  });
+
+  return () => unsubscribe();
+}, []);
 
   // Filter students
   const filteredStudents = students.filter((s) => {
@@ -73,7 +94,86 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const q = teacherSearch.toLowerCase();
     return t.name.toLowerCase().includes(q) || t.room.toLowerCase().includes(q) || t.subject.toLowerCase().includes(q);
   });
+const filteredUsers = users.filter((user) => {
+  const q = userSearch.toLowerCase();
 
+  return (
+    user.displayName.toLowerCase().includes(q) ||
+    user.email.toLowerCase().includes(q) ||
+    user.role.toLowerCase().includes(q)
+  );
+});
+
+const handleToggleTeacherRole = async (user: UserProfile) => {
+  const makeTeacher = user.role !== 'teacher';
+
+  if (user.role === 'admin') {
+    setFeedback({
+      type: 'error',
+      message: 'Administrator accounts cannot be changed from this screen.'
+    });
+    return;
+  }
+
+  const actionText = makeTeacher
+    ? 'grant teacher status to'
+    : 'remove teacher status from';
+
+  if (
+    !window.confirm(
+      `Are you sure you want to ${actionText} ${user.displayName}?`
+    )
+  ) {
+    return;
+  }
+
+  setIsProcessing(true);
+  setFeedback(null);
+
+  try {
+    if (makeTeacher) {
+      // Look for an existing teacher roster record with the same email.
+      const matchingTeacher = teachers.find(
+        (teacher) =>
+          teacher.email?.toLowerCase() === user.email.toLowerCase()
+      );
+
+      await updateUserRole(user.uid, 'teacher');
+
+      // Link the user's account to the existing teacher roster record.
+      if (matchingTeacher) {
+        await saveUserProfile({
+          ...user,
+          role: 'teacher',
+          teacherDocId: matchingTeacher.id,
+          room: matchingTeacher.room
+        });
+      }
+
+      setFeedback({
+        type: 'success',
+        message: `${user.displayName} has been granted Teacher status.`
+      });
+    } else {
+      await updateUserRole(user.uid, 'student');
+
+      setFeedback({
+        type: 'success',
+        message: `${user.displayName} has been changed back to Student status.`
+      });
+    }
+  } catch (err: unknown) {
+    const error = err as Error;
+
+    setFeedback({
+      type: 'error',
+      message: error.message || 'Failed to update user role.'
+    });
+  } finally {
+    setIsProcessing(false);
+  }
+};
+  
   // Add Student Handler
   const handleAddStudentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -346,6 +446,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         >
           Teacher Management ({teachers.length})
         </button>
+        <button
+  onClick={() => setAdminTab('users')}
+  className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition ${
+    adminTab === 'users'
+      ? 'bg-purple-950 text-amber-300 shadow-md'
+      : 'text-slate-600 hover:bg-slate-100'
+  }`}
+>
+  User Accounts ({users.length})
+</button>
       </div>
 
       {/* TAB 1: ANALYTICS & CHARTS */}
@@ -604,7 +714,154 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         </div>
       )}
+ {/* TAB 4: USER ACCOUNT MANAGEMENT */}
+      {adminTab === 'users' && (
+        <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-md space-y-4">
 
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+            <div>
+              <h3 className="text-lg font-bold text-purple-950">
+                User Account Management ({users.length} Accounts)
+              </h3>
+              <p className="text-xs text-slate-500">
+                Manage account roles and grant Teacher access to approved staff members.
+              </p>
+            </div>
+
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search users..."
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                className="pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-xs w-48 sm:w-60 outline-none focus:border-purple-600"
+              />
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs sm:text-sm">
+              <thead>
+                <tr className="bg-slate-50 text-slate-600 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
+                  <th className="py-3 px-3">User</th>
+                  <th className="py-3 px-3">Email</th>
+                  <th className="py-3 px-3">Current Role</th>
+                  <th className="py-3 px-3">Linked Profile</th>
+                  <th className="py-3 px-3 text-right">Actions</th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-100">
+                {filteredUsers.map((user) => {
+                  const matchingTeacher = teachers.find(
+                    (teacher) =>
+                      teacher.email?.toLowerCase() === user.email.toLowerCase()
+                  );
+
+                  return (
+                    <tr
+                      key={user.uid}
+                      className="hover:bg-purple-50/40 transition"
+                    >
+                      <td className="py-3 px-3">
+                        <div className="font-semibold text-slate-900">
+                          {user.displayName}
+                        </div>
+
+                        <div className="text-[10px] text-slate-400 font-mono">
+                          {user.uid}
+                        </div>
+                      </td>
+
+                      <td className="py-3 px-3 font-mono text-xs text-slate-500">
+                        {user.email}
+                      </td>
+
+                      <td className="py-3 px-3">
+                        <span
+                          className={`px-2 py-1 rounded-full text-xs font-bold ${
+                            user.role === 'admin'
+                              ? 'bg-purple-100 text-purple-900'
+                              : user.role === 'teacher'
+                              ? 'bg-amber-100 text-amber-900'
+                              : 'bg-slate-100 text-slate-700'
+                          }`}
+                        >
+                          {user.role.toUpperCase()}
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-3 text-xs">
+                        {user.role === 'teacher' ? (
+                          user.teacherDocId ? (
+                            <span className="text-emerald-700 font-semibold">
+                              Teacher roster linked
+                            </span>
+                          ) : matchingTeacher ? (
+                            <span className="text-amber-700 font-semibold">
+                              Teacher roster match found
+                            </span>
+                          ) : (
+                            <span className="text-slate-500">
+                              No teacher roster match
+                            </span>
+                          )
+                        ) : user.role === 'student' ? (
+                          <span className="text-slate-500">
+                            {user.studentId
+                              ? `Student #${user.studentId}`
+                              : 'Student account'}
+                          </span>
+                        ) : (
+                          <span className="text-purple-700 font-semibold">
+                            Administrator
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="py-3 px-3 text-right">
+                        {user.role === 'admin' ? (
+                          <span className="text-xs text-slate-400 font-semibold">
+                            Protected
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleTeacherRole(user)}
+                            disabled={isProcessing}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                              user.role === 'teacher'
+                                ? 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                                : 'bg-purple-900 hover:bg-purple-950 text-white'
+                            }`}
+                          >
+                            {user.role === 'teacher'
+                              ? 'Remove Teacher'
+                              : 'Make Teacher'}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {filteredUsers.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={5}
+                      className="py-10 text-center text-sm text-slate-400"
+                    >
+                      No user accounts match your search.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+        </div>
+      )}
       {/* ========================================================
           ADD STUDENT MODAL
          ======================================================== */}
