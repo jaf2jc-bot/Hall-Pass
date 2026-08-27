@@ -42,7 +42,7 @@ export const RequestPassModal: React.FC<RequestPassModalProps> = ({
 }) => {
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
   const [selectedDestination, setSelectedDestination] = useState<DestinationType>('Restroom');
-  const [selectedTeacherName, setSelectedTeacherName] = useState<string>('');
+  
   const [destinationDetails, setDestinationDetails] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -55,13 +55,7 @@ export const RequestPassModal: React.FC<RequestPassModalProps> = ({
     }
   }, [preSelectedStudent, students]);
 
-  useEffect(() => {
-    if (activeTeacher) {
-      setSelectedTeacherName(activeTeacher.name);
-    } else if (teachers.length > 0 && !selectedTeacherName) {
-      setSelectedTeacherName(teachers[0].name);
-    }
-  }, [activeTeacher, teachers]);
+
 
   if (!isOpen) return null;
 
@@ -84,18 +78,26 @@ export const RequestPassModal: React.FC<RequestPassModalProps> = ({
     setErrorMsg(null);
 
     try {
-      const teacherObj = teachers.find((t) => t.name === selectedTeacherName);
-      await requestHallPass({
-        studentDocId: student.id,
-        studentId: student.studentId,
-        studentName: `${student.firstName} ${student.lastName}`,
-        studentEmail: student.email,
-        teacher: selectedTeacherName,
-        teacherRoom: teacherObj?.room || '',
-        destination: selectedDestination,
-        destinationDetails: destinationDetails.trim() || undefined,
-        createdBy: 'teacher'
-      });
+     if (!activeTeacher) {
+  setErrorMsg('Unable to identify the logged-in teacher. Please sign in again.');
+  return;
+}
+
+await requestHallPass({
+  studentDocId: student.id,
+  studentId: student.studentId,
+  studentName: `${student.firstName} ${student.lastName}`,
+  studentEmail: student.email,
+
+  // Automatically identify the authorizing teacher
+  teacher: activeTeacher.name,
+  teacherUid: activeTeacher.uid,
+  teacherRoom: activeTeacher.room || '',
+
+  destination: selectedDestination,
+  destinationDetails: destinationDetails.trim() || undefined,
+  createdBy: 'teacher'
+});
 
       if (soundEnabled) playNotificationTone('start');
       onClose();
