@@ -86,3 +86,12 @@ export interface PassStatistics {
   passesByDestination: Record<string, number>;
   passesByHour: Record<string, number>;
 }
+
+export interface ConflictPair {
+  id: string;
+  studentId1: string;
+  studentId2: string;
+  studentName1: string;
+  studentName2: string;
+  createdAt: number;
+}
