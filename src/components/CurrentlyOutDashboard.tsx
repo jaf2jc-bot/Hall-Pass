@@ -129,13 +129,48 @@ const conflictAlerts = conflictPairs
     } => alert !== null
   );
 
-// Play an alert when a new conflict appears
+// Play a short double-beep when a new hallway conflict appears
 useEffect(() => {
   if (
     soundEnabled &&
     conflictAlerts.length > previousConflictCount.current
   ) {
-    playNotificationTone('start');
+    const audioContext = new (
+      window.AudioContext ||
+      (window as typeof window & {
+        webkitAudioContext: typeof AudioContext;
+      }).webkitAudioContext
+    )();
+
+    const playBeep = (delay: number) => {
+      setTimeout(() => {
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+
+        oscillator.type = 'sine';
+        oscillator.frequency.value = 880;
+
+        gainNode.gain.setValueAtTime(0.18, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(
+          0.001,
+          audioContext.currentTime + 0.12
+        );
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        oscillator.start();
+        oscillator.stop(audioContext.currentTime + 0.12);
+      }, delay);
+    };
+
+    // Short double beep: beep → pause → beep
+    playBeep(0);
+    playBeep(180);
+
+    setTimeout(() => {
+      audioContext.close();
+    }, 500);
   }
 
   previousConflictCount.current = conflictAlerts.length;
