@@ -23,8 +23,11 @@ export interface HallPass {
   studentId: string;
   studentName: string;
   studentEmail?: string;
+
   teacher: string;
+  teacherUid: string;
   teacherRoom?: string;
+
   destination: DestinationType;
   destinationDetails?: string;
   status: PassStatus;
