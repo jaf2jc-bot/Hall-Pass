@@ -709,9 +709,13 @@ export async function createStudentRequest(params: {
   studentName: string;
   studentEmail?: string;
 
-  teacherId: string;
-  teacher: string;
-  teacherRoom?: string;
+  requestingTeacherId: string;
+  requestingTeacher: string;
+  requestingTeacherRoom?: string;
+
+  receivingTeacherId: string;
+  receivingTeacher: string;
+  receivingTeacherRoom?: string;
 
   requestDate: string;
   period: string;
@@ -721,6 +725,44 @@ export async function createStudentRequest(params: {
 }): Promise<string> {
   await ensureAuthenticated();
 
+  if (!params.requestingTeacherId) {
+    throw new Error('Requesting teacher could not be identified.');
+  }
+
+  if (!params.receivingTeacherId) {
+    throw new Error(
+      'Please select the teacher you are requesting the student from.'
+    );
+  }
+
+  if (
+    params.requestingTeacherId ===
+    params.receivingTeacherId
+  ) {
+    throw new Error(
+      'You cannot request a student from yourself.'
+    );
+  }
+
+  if (!params.studentDocId || !params.studentId) {
+    throw new Error('A valid student is required.');
+  }
+
+  const existingRequestQuery = query(
+    collection(db, STUDENT_REQUESTS_COLLECTION),
+    where('studentId', '==', params.studentId),
+    where('status', 'in', ['PENDING', 'ACCEPTED'])
+  );
+
+  const existingRequestSnap =
+    await getDocs(existingRequestQuery);
+
+  if (!existingRequestSnap.empty) {
+    throw new Error(
+      `${params.studentName} already has an active student request.`
+    );
+  }
+
   const now = Date.now();
 
   const requestData: Omit<StudentRequest, 'id'> = {
@@ -729,15 +771,29 @@ export async function createStudentRequest(params: {
     studentName: params.studentName,
     studentEmail: params.studentEmail,
 
-    teacherId: params.teacherId,
-    teacher: params.teacher,
-    teacherRoom: params.teacherRoom || '',
+    requestingTeacherId:
+      params.requestingTeacherId,
+
+    requestingTeacher:
+      params.requestingTeacher,
+
+    requestingTeacherRoom:
+      params.requestingTeacherRoom || '',
+
+    receivingTeacherId:
+      params.receivingTeacherId,
+
+    receivingTeacher:
+      params.receivingTeacher,
+
+    receivingTeacherRoom:
+      params.receivingTeacherRoom || '',
 
     requestDate: params.requestDate,
     period: params.period,
 
-    reason: params.reason?.trim() || '',
-    notes: params.notes?.trim() || '',
+    reason: params.reason || '',
+    notes: params.notes || '',
 
     status: 'PENDING',
 
@@ -753,10 +809,17 @@ export async function createStudentRequest(params: {
 }
 
 
+// ==========================================
+// REAL-TIME STUDENT REQUEST LISTENER
+// ==========================================
+
 export function subscribeToStudentRequests(
   callback: (requests: StudentRequest[]) => void
 ) {
-  const q = collection(db, STUDENT_REQUESTS_COLLECTION);
+  const q = collection(
+    db,
+    STUDENT_REQUESTS_COLLECTION
+  );
 
   return onSnapshot(
     q,
@@ -769,39 +832,83 @@ export function subscribeToStudentRequests(
         list.push({
           id: docSnap.id,
 
-          studentDocId: data.studentDocId || '',
-          studentId: data.studentId || '',
-          studentName: data.studentName || '',
-          studentEmail: data.studentEmail || '',
+          studentDocId:
+            data.studentDocId || '',
 
-          teacherId: data.teacherId || '',
-          teacher: data.teacher || '',
-          teacherRoom: data.teacherRoom || '',
+          studentId:
+            data.studentId || '',
 
-          requestDate: data.requestDate || '',
-          period: data.period || '',
+          studentName:
+            data.studentName || '',
 
-          reason: data.reason || '',
-          notes: data.notes || '',
+          studentEmail:
+            data.studentEmail || '',
 
-          status: data.status || 'PENDING',
+          requestingTeacherId:
+            data.requestingTeacherId || '',
 
-          createdAt: Number(data.createdAt) || Date.now(),
-          completedAt: data.completedAt
-            ? Number(data.completedAt)
-            : undefined
+          requestingTeacher:
+            data.requestingTeacher || '',
+
+          requestingTeacherRoom:
+            data.requestingTeacherRoom || '',
+
+          receivingTeacherId:
+            data.receivingTeacherId || '',
+
+          receivingTeacher:
+            data.receivingTeacher || '',
+
+          receivingTeacherRoom:
+            data.receivingTeacherRoom || '',
+
+          requestDate:
+            data.requestDate || '',
+
+          period:
+            data.period || '',
+
+          reason:
+            data.reason || '',
+
+          notes:
+            data.notes || '',
+
+          status:
+            data.status || 'PENDING',
+
+          hallPassId:
+            data.hallPassId || undefined,
+
+          createdAt:
+            Number(data.createdAt) || Date.now(),
+
+          acceptedAt:
+            data.acceptedAt
+              ? Number(data.acceptedAt)
+              : undefined,
+
+          arrivedAt:
+            data.arrivedAt
+              ? Number(data.arrivedAt)
+              : undefined,
+
+          completedAt:
+            data.completedAt
+              ? Number(data.completedAt)
+              : undefined,
+
+          cancelledAt:
+            data.cancelledAt
+              ? Number(data.cancelledAt)
+              : undefined
         });
       });
 
-      // Today's requests first, then future requests.
-      // Within each date, sort by period.
-      list.sort((a, b) => {
-        if (a.requestDate !== b.requestDate) {
-          return a.requestDate.localeCompare(b.requestDate);
-        }
-
-        return a.period.localeCompare(b.period);
-      });
+      list.sort(
+        (a, b) =>
+          b.createdAt - a.createdAt
+      );
 
       callback(list);
     },
@@ -815,7 +922,153 @@ export function subscribeToStudentRequests(
 }
 
 
-export async function completeStudentRequest(
+// ==========================================
+// ACCEPT STUDENT REQUEST
+//
+// This does TWO things:
+// 1. Changes request to ACCEPTED
+// 2. Automatically creates an ACTIVE hall pass
+// ==========================================
+
+export async function acceptStudentRequest(
+  requestId: string
+): Promise<string> {
+  await ensureAuthenticated();
+
+  const requestRef = doc(
+    db,
+    STUDENT_REQUESTS_COLLECTION,
+    requestId
+  );
+
+  const requestSnap =
+    await getDoc(requestRef);
+
+  if (!requestSnap.exists()) {
+    throw new Error(
+      'Student request not found.'
+    );
+  }
+
+  const request =
+    requestSnap.data() as Omit<
+      StudentRequest,
+      'id'
+    >;
+
+  if (request.status !== 'PENDING') {
+    throw new Error(
+      'This student request has already been handled.'
+    );
+  }
+
+  // Make sure student does not already have an active pass.
+  const existingPassQuery = query(
+    collection(db, HALL_PASSES_COLLECTION),
+    where(
+      'studentId',
+      '==',
+      request.studentId
+    ),
+    where(
+      'status',
+      '==',
+      'ACTIVE'
+    )
+  );
+
+  const existingPassSnap =
+    await getDocs(existingPassQuery);
+
+  if (!existingPassSnap.empty) {
+    throw new Error(
+      `${request.studentName} already has an active hall pass.`
+    );
+  }
+
+  const now = Date.now();
+
+  // The receiving teacher is the teacher the
+  // student is leaving FROM.
+  //
+  // This means the pass appears on that teacher's
+  // "Students Out From My Class" dashboard.
+  const passData: Omit<HallPass, 'id'> = {
+    studentDocId:
+      request.studentDocId,
+
+    studentId:
+      request.studentId,
+
+    studentName:
+      request.studentName,
+
+    studentEmail:
+      request.studentEmail,
+
+    teacher:
+      request.receivingTeacher,
+
+    teacherUid:
+      undefined,
+
+    teacherRoom:
+      request.receivingTeacherRoom || '',
+
+    destination:
+      'Another Classroom',
+
+    destinationDetails:
+      `Report to ${request.requestingTeacher} — ${request.requestingTeacherRoom || 'classroom'}`,
+
+    status:
+      'ACTIVE',
+
+    timeOut:
+      now,
+
+    timeIn:
+      null,
+
+    createdAt:
+      now,
+
+    createdBy:
+      'teacher',
+
+    notes:
+      request.reason
+        ? `Student request: ${request.reason}`
+        : 'Student requested by another teacher.'
+  };
+
+  const passRef = await addDoc(
+    collection(db, HALL_PASSES_COLLECTION),
+    passData
+  );
+
+  await updateDoc(
+    requestRef,
+    {
+      status: 'ACCEPTED',
+      hallPassId: passRef.id,
+      acceptedAt: now
+    }
+  );
+
+  return passRef.id;
+}
+
+
+// ==========================================
+// MARK STUDENT AS ARRIVED
+//
+// The ORIGINAL REQUESTING TEACHER calls this.
+// This completes the student request and ends
+// the automatically-created hall pass.
+// ==========================================
+
+export async function markStudentRequestArrived(
   requestId: string
 ): Promise<void> {
   await ensureAuthenticated();
@@ -826,11 +1079,91 @@ export async function completeStudentRequest(
     requestId
   );
 
-  await updateDoc(requestRef, {
-    status: 'COMPLETED',
-    completedAt: Date.now()
-  });
+  const requestSnap =
+    await getDoc(requestRef);
+
+  if (!requestSnap.exists()) {
+    throw new Error(
+      'Student request not found.'
+    );
+  }
+
+  const request =
+    requestSnap.data() as Omit<
+      StudentRequest,
+      'id'
+    >;
+
+  if (request.status !== 'ACCEPTED') {
+    throw new Error(
+      'This student is not currently traveling to your classroom.'
+    );
+  }
+
+  const now = Date.now();
+
+  // End the automatic hall pass.
+  if (request.hallPassId) {
+    const passRef = doc(
+      db,
+      HALL_PASSES_COLLECTION,
+      request.hallPassId
+    );
+
+    const passSnap =
+      await getDoc(passRef);
+
+    if (passSnap.exists()) {
+      const passData =
+        passSnap.data();
+
+      const timeOut =
+        Number(passData.timeOut) ||
+        now;
+
+      const durationSeconds =
+        Math.max(
+          1,
+          Math.round(
+            (now - timeOut) / 1000
+          )
+        );
+
+      const durationMinutes =
+        Math.max(
+          1,
+          Math.round(
+            durationSeconds / 60
+          )
+        );
+
+      await updateDoc(
+        passRef,
+        {
+          status: 'COMPLETED',
+          timeIn: now,
+          durationSeconds,
+          durationMinutes,
+          endedBy: 'teacher'
+        }
+      );
+    }
+  }
+
+  await updateDoc(
+    requestRef,
+    {
+      status: 'COMPLETED',
+      arrivedAt: now,
+      completedAt: now
+    }
+  );
 }
+
+
+// ==========================================
+// CANCEL STUDENT REQUEST
+// ==========================================
 
 export async function cancelStudentRequest(
   requestId: string
@@ -843,11 +1176,115 @@ export async function cancelStudentRequest(
     requestId
   );
 
-  await updateDoc(requestRef, {
-    status: 'CANCELLED'
-  });
+  const requestSnap =
+    await getDoc(requestRef);
+
+  if (!requestSnap.exists()) {
+    throw new Error(
+      'Student request not found.'
+    );
+  }
+
+  const request =
+    requestSnap.data() as Omit<
+      StudentRequest,
+      'id'
+    >;
+
+  const now = Date.now();
+
+  // If the request was already accepted,
+  // cancel its active pass too.
+  if (
+    request.status === 'ACCEPTED' &&
+    request.hallPassId
+  ) {
+    const passRef = doc(
+      db,
+      HALL_PASSES_COLLECTION,
+      request.hallPassId
+    );
+
+    const passSnap =
+      await getDoc(passRef);
+
+    if (passSnap.exists()) {
+      await updateDoc(
+        passRef,
+        {
+          status: 'CANCELLED',
+          timeIn: now,
+          endedBy: 'teacher',
+          notes:
+            'Cancelled with student request.'
+        }
+      );
+    }
+  }
+
+  await updateDoc(
+    requestRef,
+    {
+      status: 'CANCELLED',
+      cancelledAt: now
+    }
+  );
 }
 
+
+// ==========================================
+// COMPLETE STUDENT REQUEST
+//
+// Kept for compatibility with your current
+// TeacherDashboard code.
+//
+// If a request is still PENDING, this simply
+// marks it completed.
+// If it is ACCEPTED, use markStudentRequestArrived
+// instead so the hall pass is also completed.
+// ==========================================
+
+export async function completeStudentRequest(
+  requestId: string
+): Promise<void> {
+  await ensureAuthenticated();
+
+  const requestRef = doc(
+    db,
+    STUDENT_REQUESTS_COLLECTION,
+    requestId
+  );
+
+  const requestSnap =
+    await getDoc(requestRef);
+
+  if (!requestSnap.exists()) {
+    throw new Error(
+      'Student request not found.'
+    );
+  }
+
+  const request =
+    requestSnap.data() as Omit<
+      StudentRequest,
+      'id'
+    >;
+
+  if (request.status === 'ACCEPTED') {
+    await markStudentRequestArrived(
+      requestId
+    );
+    return;
+  }
+
+  await updateDoc(
+    requestRef,
+    {
+      status: 'COMPLETED',
+      completedAt: Date.now()
+    }
+  );
+}
 // ==========================================
 // STUDENT ROSTER MANAGEMENT
 // ==========================================
