@@ -283,14 +283,11 @@ useEffect(() => {
         {/* Live Hallway Monitor */}
         {activeTab === 'currently-out' &&
           currentRole !== 'student' && (
-            <CurrentlyOutDashboard
-              activePasses={activePasses}
-              teachers={teachers}
-              soundEnabled={soundEnabled}
-              onRequestPassModal={() =>
-                handleOpenRequestModal()
-              }
-            />
+           <CurrentlyOutDashboard
+  activePasses={activePasses}
+  teachers={teachers}
+  soundEnabled={soundEnabled}
+/>
           )}
 
         {/* Teacher Dashboard */}
