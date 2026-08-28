@@ -68,27 +68,49 @@ export const Header: React.FC<HeaderProps> = ({
       const mins = now.getMinutes();
       const totalMins = hours * 60 + mins;
 
-      if (totalMins < 460) {
-        setCurrentPeriod('Before School');
-      } else if (totalMins < 515) {
-        setCurrentPeriod('Period 1 (8:00 - 8:45)');
-      } else if (totalMins < 570) {
-        setCurrentPeriod('Period 2 (8:50 - 9:35)');
-      } else if (totalMins < 625) {
-        setCurrentPeriod('Period 3 (9:40 - 10:25)');
-      } else if (totalMins < 680) {
-        setCurrentPeriod('Period 4 (10:30 - 11:15)');
-      } else if (totalMins < 735) {
-        setCurrentPeriod('Period 5 / Lunch (11:20 - 12:05)');
-      } else if (totalMins < 790) {
-        setCurrentPeriod('Period 6 (12:10 - 12:55)');
-      } else if (totalMins < 845) {
-        setCurrentPeriod('Period 7 (1:00 - 1:45)');
-      } else if (totalMins < 900) {
-        setCurrentPeriod('Period 8 (1:50 - 2:35)');
-      } else {
-        setCurrentPeriod('After School');
-      }
+if (totalMins < 470) {
+  setCurrentPeriod('Before School');
+} else if (totalMins < 516) {
+  setCurrentPeriod('Period 1 (7:50 - 8:36)');
+} else if (totalMins < 519) {
+  setCurrentPeriod('Passing Period');
+} else if (totalMins < 560) {
+  setCurrentPeriod('Period 2 (8:39 - 9:20)');
+} else if (totalMins < 563) {
+  setCurrentPeriod('Passing Period');
+} else if (totalMins < 604) {
+  setCurrentPeriod('Period 3 (9:23 - 10:04)');
+} else if (totalMins < 607) {
+  setCurrentPeriod('Passing Period');
+} else if (totalMins < 648) {
+  setCurrentPeriod('Period 4 (10:07 - 10:48)');
+} else if (totalMins < 651) {
+  setCurrentPeriod('Passing Period');
+} else if (totalMins < 692) {
+  setCurrentPeriod('Period 5 (6th Grade Lunch) (10:51 - 11:32)');
+} else if (totalMins < 695) {
+  setCurrentPeriod('Passing Period');
+} else if (totalMins < 736) {
+  setCurrentPeriod('Period 6 (7th Grade Lunch) (11:35 - 12:16)');
+} else if (totalMins < 739) {
+  setCurrentPeriod('Passing Period');
+} else if (totalMins < 775) {
+  setCurrentPeriod('Period 7 (8th Grade Lunch) (12:19 - 12:55)');
+} else if (totalMins < 778) {
+  setCurrentPeriod('Passing Period');
+} else if (totalMins < 802) {
+  setCurrentPeriod('Polar Time (12:58 - 1:22)');
+} else if (totalMins < 805) {
+  setCurrentPeriod('Passing Period');
+} else if (totalMins < 846) {
+  setCurrentPeriod('Period 9 (1:25 - 2:06)');
+} else if (totalMins < 849) {
+  setCurrentPeriod('Passing Period');
+} else if (totalMins < 890) {
+  setCurrentPeriod('Period 10 (2:09 - 2:50)');
+} else {
+  setCurrentPeriod('After School');
+}
     };
 
     updateTime();
