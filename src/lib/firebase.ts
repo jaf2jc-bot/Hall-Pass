@@ -487,9 +487,11 @@ teacherRoom: data.teacherRoom || '',
         durationMinutes: data.durationMinutes || 0,
         createdAt: Number(data.createdAt) || Date.now(),
         createdBy: data.createdBy || 'student',
-        endedBy: data.endedBy,
+                endedBy: data.endedBy,
         notes: data.notes || '',
-        flagged: !!data.flagged
+        flagged: !!data.flagged,
+        requestId: data.requestId || undefined,
+        isStudentRequest: !!data.isStudentRequest
       });
     });
     list.sort((a, b) => b.timeOut - a.timeOut);
@@ -527,9 +529,11 @@ teacherRoom: data.teacherRoom || '',
         durationMinutes: data.durationMinutes || 0,
         createdAt: Number(data.createdAt) || Date.now(),
         createdBy: data.createdBy || 'student',
-        endedBy: data.endedBy,
+                endedBy: data.endedBy,
         notes: data.notes || '',
-        flagged: !!data.flagged
+        flagged: !!data.flagged,
+        requestId: data.requestId || undefined,
+        isStudentRequest: !!data.isStudentRequest
       });
     });
     list.sort((a, b) => b.timeOut - a.timeOut);
@@ -571,9 +575,11 @@ teacherRoom: data.teacherRoom || '',
       durationMinutes: data.durationMinutes || 0,
       createdAt: Number(data.createdAt) || Date.now(),
       createdBy: data.createdBy || 'student',
-      endedBy: data.endedBy,
+            endedBy: data.endedBy,
       notes: data.notes || '',
-      flagged: !!data.flagged
+      flagged: !!data.flagged,
+      requestId: data.requestId || undefined,
+      isStudentRequest: !!data.isStudentRequest
     });
   }, (err) => {
     console.error(`Error subscribing to active pass for student ${studentId}:`, err);
@@ -1036,10 +1042,14 @@ export async function acceptStudentRequest(
     createdBy:
       'teacher',
 
-    notes:
+        notes:
       request.reason
         ? `Student request: ${request.reason}`
-        : 'Student requested by another teacher.'
+        : 'Student requested by another teacher.',
+
+    requestId: requestId,
+
+    isStudentRequest: true
   };
 
   const passRef = await addDoc(
