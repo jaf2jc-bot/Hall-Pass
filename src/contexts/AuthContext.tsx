@@ -7,7 +7,8 @@ import {
   getUserProfile, 
   saveUserProfile, 
   subscribeToStudents, 
-  subscribeToTeachers, 
+  subscribeToTeachers,
+  subscribeToUsers,
   seedInitialJMMSData,
   ALLOWED_DOMAIN
 } from '../lib/firebase';
