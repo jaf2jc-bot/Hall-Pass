@@ -94,6 +94,52 @@ export interface Teacher {
   department?: string;
 }
 
+export type StudentRequestStatus =
+  | 'PENDING'
+  | 'ACCEPTED'
+  | 'ARRIVED'
+  | 'COMPLETED'
+  | 'CANCELLED';
+
+export interface StudentRequest {
+  id: string;
+
+  // Student
+  studentDocId: string;
+  studentId: string;
+  studentName: string;
+  studentEmail?: string;
+
+  // Teacher who wants the student
+  requestingTeacherId: string;
+  requestingTeacher: string;
+  requestingTeacherRoom?: string;
+
+  // Teacher who currently has the student
+  receivingTeacherId: string;
+  receivingTeacher: string;
+  receivingTeacherRoom?: string;
+
+  // Request information
+  requestDate: string;
+  period: string;
+  reason?: string;
+  notes?: string;
+
+  // State
+  status: StudentRequestStatus;
+
+  // Automatically-created hall pass once accepted
+  hallPassId?: string;
+
+  // Timestamps
+  createdAt: number;
+  acceptedAt?: number;
+  arrivedAt?: number;
+  completedAt?: number;
+  cancelledAt?: number;
+}
+
 export type UserRole = 'student' | 'teacher' | 'admin';
 
 export interface UserProfile {
