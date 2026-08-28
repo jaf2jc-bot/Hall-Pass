@@ -613,14 +613,14 @@ export async function requestHallPass(params: {
   studentName: string;
   studentEmail?: string;
 teacher: string;
-teacherUid: string;
+teacherUid?: string;
 teacherRoom?: string;
   destination: DestinationType;
   destinationDetails?: string;
   createdBy?: 'student' | 'teacher' | 'admin';
   notes?: string;
 }): Promise<string> {
-  await ensureAuthenticated();
+ const authenticatedUser = await ensureAuthenticated();
 
   // Strict check: Verify student does NOT have an active pass
   const existingActiveQuery = query(
@@ -641,7 +641,7 @@ teacherRoom?: string;
     studentName: params.studentName,
     studentEmail: params.studentEmail,
 teacher: params.teacher,
-teacherUid: params.teacherUid,
+teacherUid: params.teacherUid || authenticatedUser.uid,
 teacherRoom: params.teacherRoom || '',
     destination: params.destination,
     destinationDetails: params.destinationDetails || '',
