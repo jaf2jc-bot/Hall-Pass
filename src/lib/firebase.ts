@@ -1,30 +1,32 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { 
-  getFirestore, 
-  collection, 
-  doc, 
-  getDocs, 
+
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDocs,
   getDoc,
-  setDoc, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  query, 
-  where, 
-  orderBy, 
+  setDoc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
   onSnapshot,
   writeBatch
 } from 'firebase/firestore';
-import { 
-  getAuth, 
-  signInAnonymously,
+
+import {
+  getAuth,
   signInWithPopup,
   signOut,
   GoogleAuthProvider,
   onAuthStateChanged,
   User
 } from 'firebase/auth';
+
 import firebaseConfigData from '../../firebase-applet-config.json';
+
 import {
   HallPass,
   Student,
@@ -35,9 +37,17 @@ import {
   ConflictPair,
   StudentRequest
 } from '../types';
-import { INITIAL_JMMS_STUDENTS, INITIAL_JMMS_TEACHERS } from './seedData';
 
-// Ensure Firebase is initialized
+import {
+  INITIAL_JMMS_STUDENTS,
+  INITIAL_JMMS_TEACHERS
+} from './seedData';
+
+
+// ============================================================
+// FIREBASE INITIALIZATION
+// ============================================================
+
 const firebaseConfig = {
   apiKey: firebaseConfigData.apiKey,
   authDomain: firebaseConfigData.authDomain,
@@ -47,14 +57,27 @@ const firebaseConfig = {
   appId: firebaseConfigData.appId,
 };
 
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+const app =
+  getApps().length === 0
+    ? initializeApp(firebaseConfig)
+    : getApp();
 
-// Use the designated firestore database id if present, or default
-export const db = firebaseConfigData.firestoreDatabaseId 
-  ? getFirestore(app, firebaseConfigData.firestoreDatabaseId)
-  : getFirestore(app);
+
+// Use designated Firestore database if supplied.
+export const db =
+  firebaseConfigData.firestoreDatabaseId
+    ? getFirestore(
+        app,
+        firebaseConfigData.firestoreDatabaseId
+      )
+    : getFirestore(app);
 
 export const auth = getAuth(app);
+
+
+// ============================================================
+// COLLECTION NAMES
+// ============================================================
 
 export const USERS_COLLECTION = 'users';
 export const STUDENTS_COLLECTION = 'students';
@@ -63,78 +86,285 @@ export const HALL_PASSES_COLLECTION = 'hallPasses';
 export const CONFLICT_PAIRS_COLLECTION = 'conflictPairs';
 export const STUDENT_REQUESTS_COLLECTION = 'studentRequests';
 
-// Google Workspace domain restriction
-export const ALLOWED_DOMAIN = 'bearworks.jackson.sparcc.org';
+
+// ============================================================
+// GOOGLE WORKSPACE DOMAIN
+// ============================================================
+
+export const ALLOWED_DOMAIN =
+  'bearworks.jackson.sparcc.org';
+
+
+// ============================================================
+// AUTHENTICATION
+// ============================================================
 
 export async function signInWithGoogle(): Promise<User> {
   const provider = new GoogleAuthProvider();
+
   provider.setCustomParameters({
     hd: ALLOWED_DOMAIN,
     prompt: 'select_account'
   });
-  const result = await signInWithPopup(auth, provider);
+
+  const result =
+    await signInWithPopup(auth, provider);
+
   return result.user;
 }
+
 
 export async function signOutFromApp(): Promise<void> {
   await signOut(auth);
 }
 
-export async function getUserProfile(uid: string): Promise<UserProfile | null> {
+
+/**
+ * Returns the currently authenticated Firebase user.
+ *
+ * IMPORTANT:
+ * We no longer silently create an anonymous user.
+ *
+ * Your Firestore data is intended to be accessed by
+ * authenticated JMMS users. Anonymous authentication can
+ * cause Firestore security rules to reject roster reads.
+ */
+export async function ensureAuthenticated(): Promise<User> {
+  // Already authenticated.
+  if (auth.currentUser) {
+    return auth.currentUser;
+  }
+
+  return new Promise((resolve, reject) => {
+    let finished = false;
+
+    const unsubscribe =
+      onAuthStateChanged(
+        auth,
+        (user) => {
+          if (finished) return;
+
+          finished = true;
+          unsubscribe();
+
+          if (user) {
+            resolve(user);
+          } else {
+            reject(
+              new Error(
+                'You must be signed in to access JMMS data.'
+              )
+            );
+          }
+        },
+        (error) => {
+          if (finished) return;
+
+          finished = true;
+          unsubscribe();
+          reject(error);
+        }
+      );
+  });
+}
+
+
+/**
+ * Checks whether a Firebase user belongs to the
+ * approved Google Workspace domain.
+ */
+export function isAllowedDomain(
+  user: User | null
+): boolean {
+  if (!user?.email) {
+    return false;
+  }
+
+  return user.email
+    .toLowerCase()
+    .endsWith(`@${ALLOWED_DOMAIN}`);
+}
+
+
+// ============================================================
+// USER PROFILES
+// ============================================================
+
+export async function getUserProfile(
+  uid: string
+): Promise<UserProfile | null> {
   try {
-    const userDocRef = doc(db, USERS_COLLECTION, uid);
-    const snap = await getDoc(userDocRef);
+    const userDocRef = doc(
+      db,
+      USERS_COLLECTION,
+      uid
+    );
+
+    const snap =
+      await getDoc(userDocRef);
+
     if (snap.exists()) {
       return snap.data() as UserProfile;
     }
+
     return null;
+
   } catch (err) {
-    console.warn('Error fetching user profile:', err);
+    console.error(
+      'Error fetching user profile:',
+      err
+    );
+
     return null;
   }
 }
 
-export async function saveUserProfile(profile: UserProfile): Promise<void> {
-  const userDocRef = doc(db, USERS_COLLECTION, profile.uid);
-  await setDoc(userDocRef, {
-    ...profile,
-    updatedAt: Date.now()
-  }, { merge: true });
+
+export async function saveUserProfile(
+  profile: UserProfile
+): Promise<void> {
+
+  const userDocRef = doc(
+    db,
+    USERS_COLLECTION,
+    profile.uid
+  );
+
+  await setDoc(
+    userDocRef,
+    {
+      ...profile,
+      updatedAt: Date.now()
+    },
+    {
+      merge: true
+    }
+  );
 }
+
+
+/**
+ * Subscribe to ALL user profiles.
+ *
+ * These are authorization/application users.
+ *
+ * IMPORTANT:
+ * This is NOT the student/teacher roster.
+ *
+ * TeacherDashboard can use users where:
+ *
+ * role === 'teacher'
+ *
+ * while the actual teacher roster continues to come
+ * from the teachers collection.
+ */
 export function subscribeToUserProfiles(
   callback: (users: UserProfile[]) => void
 ) {
-  const q = collection(db, USERS_COLLECTION);
+  let unsubscribeSnapshot:
+    | (() => void)
+    | null = null;
 
-  return onSnapshot(q, (snapshot) => {
-    const list: UserProfile[] = [];
+  let cancelled = false;
 
-    snapshot.forEach((docSnap) => {
-      const data = docSnap.data();
+  ensureAuthenticated()
+    .then(() => {
 
-      list.push({
-        ...(data as UserProfile),
-        uid: data.uid || docSnap.id,
-        email: data.email || '',
-        displayName: data.displayName || data.email || 'JMMS User',
-        role: data.role || 'student',
-      });
+      if (cancelled) return;
+
+      unsubscribeSnapshot =
+        onSnapshot(
+          collection(
+            db,
+            USERS_COLLECTION
+          ),
+
+          (snapshot) => {
+
+            const list: UserProfile[] = [];
+
+            snapshot.forEach(
+              (docSnap) => {
+
+                const data =
+                  docSnap.data();
+
+                list.push({
+                  ...(data as UserProfile),
+
+                  uid:
+                    data.uid ||
+                    docSnap.id,
+
+                  email:
+                    data.email || '',
+
+                  displayName:
+                    data.displayName ||
+                    data.email ||
+                    'JMMS User',
+
+                  role:
+                    data.role ||
+                    'student'
+                });
+              }
+            );
+
+            list.sort(
+              (a, b) =>
+                a.displayName.localeCompare(
+                  b.displayName
+                )
+            );
+
+            callback(list);
+          },
+
+          (err) => {
+            console.error(
+              'Error subscribing to user profiles:',
+              err
+            );
+
+            callback([]);
+          }
+        );
+
+    })
+    .catch((err) => {
+
+      console.error(
+        'Unable to authenticate before loading user profiles:',
+        err
+      );
+
+      callback([]);
     });
 
-    list.sort((a, b) =>
-      a.displayName.localeCompare(b.displayName)
-    );
 
-    callback(list);
-  }, (err) => {
-    console.error('Error subscribing to user profiles:', err);
-  });
+  return () => {
+    cancelled = true;
+
+    if (unsubscribeSnapshot) {
+      unsubscribeSnapshot();
+    }
+  };
 }
+
+
 export async function updateUserRole(
   uid: string,
   role: UserRole
 ): Promise<void> {
-  const userDocRef = doc(db, USERS_COLLECTION, uid);
+
+  await ensureAuthenticated();
+
+  const userDocRef = doc(
+    db,
+    USERS_COLLECTION,
+    uid
+  );
 
   await setDoc(
     userDocRef,
@@ -142,39 +372,58 @@ export async function updateUserRole(
       role,
       updatedAt: Date.now()
     },
-    { merge: true }
+    {
+      merge: true
+    }
   );
 }
 
-// ==========================================
+
+// ============================================================
 // STUDENT CONFLICT PAIRS
-// ==========================================
+// ============================================================
 
 export async function addConflictPair(
   student1: Student,
   student2: Student
 ): Promise<string> {
+
   await ensureAuthenticated();
 
-  if (student1.studentId === student2.studentId) {
-    throw new Error('A student cannot be paired with themselves.');
+  if (
+    student1.studentId ===
+    student2.studentId
+  ) {
+    throw new Error(
+      'A student cannot be paired with themselves.'
+    );
   }
 
-  // Store the IDs in a consistent order so
-  // Mason + Tyler is the same pair as Tyler + Mason.
   const [first, second] =
-    student1.studentId < student2.studentId
+    student1.studentId <
+    student2.studentId
       ? [student1, student2]
       : [student2, student1];
 
-  // Prevent duplicate pairs.
   const existingQuery = query(
-    collection(db, CONFLICT_PAIRS_COLLECTION),
-    where('studentId1', '==', first.studentId),
-    where('studentId2', '==', second.studentId)
+    collection(
+      db,
+      CONFLICT_PAIRS_COLLECTION
+    ),
+    where(
+      'studentId1',
+      '==',
+      first.studentId
+    ),
+    where(
+      'studentId2',
+      '==',
+      second.studentId
+    )
   );
 
-  const existing = await getDocs(existingQuery);
+  const existing =
+    await getDocs(existingQuery);
 
   if (!existing.empty) {
     throw new Error(
@@ -183,556 +432,1786 @@ export async function addConflictPair(
   }
 
   const docRef = await addDoc(
-    collection(db, CONFLICT_PAIRS_COLLECTION),
+    collection(
+      db,
+      CONFLICT_PAIRS_COLLECTION
+    ),
     {
-      studentId1: first.studentId,
-      studentId2: second.studentId,
-      studentName1: `${first.firstName} ${first.lastName}`,
-      studentName2: `${second.firstName} ${second.lastName}`,
-      createdAt: Date.now()
+      studentId1:
+        first.studentId,
+
+      studentId2:
+        second.studentId,
+
+      studentName1:
+        `${first.firstName} ${first.lastName}`,
+
+      studentName2:
+        `${second.firstName} ${second.lastName}`,
+
+      createdAt:
+        Date.now()
     }
   );
 
   return docRef.id;
 }
+
 
 export async function deleteConflictPair(
   conflictPairId: string
 ): Promise<void> {
+
   await ensureAuthenticated();
 
   await deleteDoc(
-    doc(db, CONFLICT_PAIRS_COLLECTION, conflictPairId)
+    doc(
+      db,
+      CONFLICT_PAIRS_COLLECTION,
+      conflictPairId
+    )
   );
 }
+
 
 export function subscribeToConflictPairs(
   callback: (pairs: ConflictPair[]) => void
 ) {
-  const q = collection(db, CONFLICT_PAIRS_COLLECTION);
 
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const list: ConflictPair[] = [];
+  let unsubscribeSnapshot:
+    | (() => void)
+    | null = null;
 
-      snapshot.forEach((docSnap) => {
-        const data = docSnap.data();
+  let cancelled = false;
 
-        list.push({
-          id: docSnap.id,
-          studentId1: data.studentId1 || '',
-          studentId2: data.studentId2 || '',
-          studentName1: data.studentName1 || '',
-          studentName2: data.studentName2 || '',
-          createdAt: Number(data.createdAt) || Date.now()
-        });
-      });
+  ensureAuthenticated()
+    .then(() => {
 
-      list.sort((a, b) =>
-        a.studentName1.localeCompare(b.studentName1)
-      );
+      if (cancelled) return;
 
-      callback(list);
-    },
-    (err) => {
+      unsubscribeSnapshot =
+        onSnapshot(
+          collection(
+            db,
+            CONFLICT_PAIRS_COLLECTION
+          ),
+
+          (snapshot) => {
+
+            const list: ConflictPair[] = [];
+
+            snapshot.forEach(
+              (docSnap) => {
+
+                const data =
+                  docSnap.data();
+
+                list.push({
+                  id:
+                    docSnap.id,
+
+                  studentId1:
+                    data.studentId1 || '',
+
+                  studentId2:
+                    data.studentId2 || '',
+
+                  studentName1:
+                    data.studentName1 || '',
+
+                  studentName2:
+                    data.studentName2 || '',
+
+                  createdAt:
+                    Number(
+                      data.createdAt
+                    ) || Date.now()
+                });
+              }
+            );
+
+            list.sort(
+              (a, b) =>
+                a.studentName1.localeCompare(
+                  b.studentName1
+                )
+            );
+
+            callback(list);
+          },
+
+          (err) => {
+
+            console.error(
+              'Error subscribing to conflict pairs:',
+              err
+            );
+
+            callback([]);
+          }
+        );
+
+    })
+    .catch((err) => {
+
       console.error(
-        'Error subscribing to conflict pairs:',
+        'Unable to authenticate before loading conflict pairs:',
         err
       );
+
+      callback([]);
+    });
+
+
+  return () => {
+
+    cancelled = true;
+
+    if (unsubscribeSnapshot) {
+      unsubscribeSnapshot();
     }
-  );
+  };
 }
 
-// Sign in anonymously fallback for initial load/preview if not signed in
-export const ensureAuthenticated = async (): Promise<User> => {
-  return new Promise((resolve) => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        unsubscribe();
-        resolve(user);
-      } else {
-        try {
-          const cred = await signInAnonymously(auth);
-          unsubscribe();
-          resolve(cred.user);
-        } catch (err) {
-          console.warn('Anonymous auth note:', err);
-          unsubscribe();
-          if (auth.currentUser) {
-            resolve(auth.currentUser);
-          } else {
-            resolve({ uid: 'guest-' + Math.random().toString(36).substring(2, 9) } as User);
-          }
-        }
-      }
-    });
-  });
-};
 
-// ==========================================
-// SEEDING UTILITY
-// ==========================================
-export async function seedInitialJMMSData(): Promise<{ studentsSeeded: number; teachersSeeded: number }> {
+// ============================================================
+// SEEDING
+// ============================================================
+
+export async function seedInitialJMMSData(): Promise<{
+  studentsSeeded: number;
+  teachersSeeded: number;
+}> {
+
   try {
+
     await ensureAuthenticated();
-    
-    // Check students
-    const studentsSnap = await getDocs(collection(db, STUDENTS_COLLECTION));
+
+    // --------------------------------------------------------
+    // STUDENTS
+    // --------------------------------------------------------
+
+    const studentsSnap =
+      await getDocs(
+        collection(
+          db,
+          STUDENTS_COLLECTION
+        )
+      );
+
     let studentsSeeded = 0;
+
     if (studentsSnap.empty) {
-      const batch = writeBatch(db);
-      for (const student of INITIAL_JMMS_STUDENTS) {
-        const newDocRef = doc(collection(db, STUDENTS_COLLECTION));
-        batch.set(newDocRef, student);
+
+      const batch =
+        writeBatch(db);
+
+      for (
+        const student
+        of INITIAL_JMMS_STUDENTS
+      ) {
+
+        const newDocRef =
+          doc(
+            collection(
+              db,
+              STUDENTS_COLLECTION
+            )
+          );
+
+        batch.set(
+          newDocRef,
+          {
+            ...student,
+            createdAt:
+              student.createdAt ||
+              Date.now()
+          }
+        );
       }
+
       await batch.commit();
-      studentsSeeded = INITIAL_JMMS_STUDENTS.length;
+
+      studentsSeeded =
+        INITIAL_JMMS_STUDENTS.length;
     }
 
-    // Check teachers
-    const teachersSnap = await getDocs(collection(db, TEACHERS_COLLECTION));
+
+    // --------------------------------------------------------
+    // TEACHERS
+    // --------------------------------------------------------
+
+    const teachersSnap =
+      await getDocs(
+        collection(
+          db,
+          TEACHERS_COLLECTION
+        )
+      );
+
     let teachersSeeded = 0;
+
     if (teachersSnap.empty) {
-      const batch = writeBatch(db);
-      for (const teacher of INITIAL_JMMS_TEACHERS) {
-        const newDocRef = doc(collection(db, TEACHERS_COLLECTION));
-        batch.set(newDocRef, teacher);
+
+      const batch =
+        writeBatch(db);
+
+      for (
+        const teacher
+        of INITIAL_JMMS_TEACHERS
+      ) {
+
+        const newDocRef =
+          doc(
+            collection(
+              db,
+              TEACHERS_COLLECTION
+            )
+          );
+
+        batch.set(
+          newDocRef,
+          {
+            ...teacher,
+            createdAt:
+              teacher.createdAt ||
+              Date.now()
+          }
+        );
       }
+
       await batch.commit();
-      teachersSeeded = INITIAL_JMMS_TEACHERS.length;
+
+      teachersSeeded =
+        INITIAL_JMMS_TEACHERS.length;
     }
 
-    // Check sample historical passes if completely empty
-    const passesSnap = await getDocs(collection(db, HALL_PASSES_COLLECTION));
-    if (passesSnap.empty && studentsSnap.docs.length > 0) {
-      const studentDocs = studentsSnap.docs;
+
+    // --------------------------------------------------------
+    // SAMPLE PASSES
+    // --------------------------------------------------------
+
+    const passesSnap =
+      await getDocs(
+        collection(
+          db,
+          HALL_PASSES_COLLECTION
+        )
+      );
+
+    if (
+      passesSnap.empty &&
+      studentsSnap.docs.length > 0
+    ) {
+
+      const studentDocs =
+        studentsSnap.docs;
+
       const samplePasses = [
+
         {
-          studentDocId: studentDocs[0]?.id || 's1',
-          studentId: "80101",
-          studentName: "Liam Miller",
-          teacher: "Mrs. Sarah Mitchell",
-          teacherRoom: "Room 204",
-          destination: "Restroom" as DestinationType,
-          status: 'COMPLETED' as const,
-          timeOut: Date.now() - 3600000 * 2,
-          timeIn: Date.now() - 3600000 * 2 + 300000,
-          durationSeconds: 300,
-          durationMinutes: 5,
-          createdAt: Date.now() - 3600000 * 2,
-          createdBy: 'student' as const,
-          endedBy: 'student' as const
+          studentDocId:
+            studentDocs[0]?.id || 's1',
+
+          studentId:
+            '80101',
+
+          studentName:
+            'Liam Miller',
+
+          teacher:
+            'Mrs. Sarah Mitchell',
+
+          teacherRoom:
+            'Room 204',
+
+          destination:
+            'Restroom' as DestinationType,
+
+          status:
+            'COMPLETED' as const,
+
+          timeOut:
+            Date.now() -
+            3600000 * 2,
+
+          timeIn:
+            Date.now() -
+            3600000 * 2 +
+            300000,
+
+          durationSeconds:
+            300,
+
+          durationMinutes:
+            5,
+
+          createdAt:
+            Date.now() -
+            3600000 * 2,
+
+          createdBy:
+            'student' as const,
+
+          endedBy:
+            'student' as const
         },
+
         {
-          studentDocId: studentDocs[1]?.id || 's2',
-          studentId: "80102",
-          studentName: "Emma Davis",
-          teacher: "Mr. David Robinson",
-          teacherRoom: "Room 208",
-          destination: "Library" as DestinationType,
-          status: 'COMPLETED' as const,
-          timeOut: Date.now() - 3600000 * 4,
-          timeIn: Date.now() - 3600000 * 4 + 720000,
-          durationSeconds: 720,
-          durationMinutes: 12,
-          createdAt: Date.now() - 3600000 * 4,
-          createdBy: 'student' as const,
-          endedBy: 'student' as const
+          studentDocId:
+            studentDocs[1]?.id || 's2',
+
+          studentId:
+            '80102',
+
+          studentName:
+            'Emma Davis',
+
+          teacher:
+            'Mr. David Robinson',
+
+          teacherRoom:
+            'Room 208',
+
+          destination:
+            'Library' as DestinationType,
+
+          status:
+            'COMPLETED' as const,
+
+          timeOut:
+            Date.now() -
+            3600000 * 4,
+
+          timeIn:
+            Date.now() -
+            3600000 * 4 +
+            720000,
+
+          durationSeconds:
+            720,
+
+          durationMinutes:
+            12,
+
+          createdAt:
+            Date.now() -
+            3600000 * 4,
+
+          createdBy:
+            'student' as const,
+
+          endedBy:
+            'student' as const
         },
+
         {
-          studentDocId: studentDocs[2]?.id || 's3',
-          studentId: "80103",
-          studentName: "Noah Wilson",
-          teacher: "Ms. Clara Harper",
-          teacherRoom: "Room 212",
-          destination: "Office" as DestinationType,
-          status: 'COMPLETED' as const,
-          timeOut: Date.now() - 3600000 * 5,
-          timeIn: Date.now() - 3600000 * 5 + 480000,
-          durationSeconds: 480,
-          durationMinutes: 8,
-          createdAt: Date.now() - 3600000 * 5,
-          createdBy: 'teacher' as const,
-          endedBy: 'teacher' as const
+          studentDocId:
+            studentDocs[2]?.id || 's3',
+
+          studentId:
+            '80103',
+
+          studentName:
+            'Noah Wilson',
+
+          teacher:
+            'Ms. Clara Harper',
+
+          teacherRoom:
+            'Room 212',
+
+          destination:
+            'Office' as DestinationType,
+
+          status:
+            'COMPLETED' as const,
+
+          timeOut:
+            Date.now() -
+            3600000 * 5,
+
+          timeIn:
+            Date.now() -
+            3600000 * 5 +
+            480000,
+
+          durationSeconds:
+            480,
+
+          durationMinutes:
+            8,
+
+          createdAt:
+            Date.now() -
+            3600000 * 5,
+
+          createdBy:
+            'teacher' as const,
+
+          endedBy:
+            'teacher' as const
         }
       ];
 
-      const batch = writeBatch(db);
-      for (const pass of samplePasses) {
-        const passRef = doc(collection(db, HALL_PASSES_COLLECTION));
-        batch.set(passRef, pass);
+      const batch =
+        writeBatch(db);
+
+      for (
+        const pass
+        of samplePasses
+      ) {
+
+        const passRef =
+          doc(
+            collection(
+              db,
+              HALL_PASSES_COLLECTION
+            )
+          );
+
+        batch.set(
+          passRef,
+          pass
+        );
       }
+
       await batch.commit();
     }
 
-    return { studentsSeeded, teachersSeeded };
+
+    return {
+      studentsSeeded,
+      teachersSeeded
+    };
+
   } catch (err) {
-    console.error('Error seeding JMMS initial data:', err);
-    return { studentsSeeded: 0, teachersSeeded: 0 };
+
+    console.error(
+      'Error seeding JMMS initial data:',
+      err
+    );
+
+    return {
+      studentsSeeded: 0,
+      teachersSeeded: 0
+    };
   }
 }
 
-// ==========================================
-// REAL-TIME FIRESTORE LISTENERS
-// ==========================================
 
-export function subscribeToStudents(callback: (students: Student[]) => void) {
-  const q = collection(db, STUDENTS_COLLECTION);
-  return onSnapshot(q, (snapshot) => {
-    const list: Student[] = [];
-    snapshot.forEach((docSnap) => {
-      const data = docSnap.data();
-      list.push({
-        id: docSnap.id,
-        studentId: data.studentId || '',
-        firstName: data.firstName || '',
-        lastName: data.lastName || '',
-        grade: data.grade || 8,
-        active: data.active !== false,
-        email: data.email || '',
-        homeroom: data.homeroom || '',
-        createdAt: data.createdAt || 0,
-      });
+// ============================================================
+// STUDENT LISTENER
+// ============================================================
+
+export function subscribeToStudents(
+  callback: (students: Student[]) => void
+) {
+
+  let unsubscribeSnapshot:
+    | (() => void)
+    | null = null;
+
+  let cancelled = false;
+
+  ensureAuthenticated()
+    .then(() => {
+
+      if (cancelled) return;
+
+      const q =
+        collection(
+          db,
+          STUDENTS_COLLECTION
+        );
+
+      unsubscribeSnapshot =
+        onSnapshot(
+          q,
+
+          (snapshot) => {
+
+            const list: Student[] = [];
+
+            snapshot.forEach(
+              (docSnap) => {
+
+                const data =
+                  docSnap.data();
+
+                list.push({
+
+                  id:
+                    docSnap.id,
+
+                  studentId:
+                    data.studentId || '',
+
+                  firstName:
+                    data.firstName || '',
+
+                  lastName:
+                    data.lastName || '',
+
+                  grade:
+                    data.grade || 8,
+
+                  active:
+                    data.active !== false,
+
+                  email:
+                    data.email || '',
+
+                  homeroom:
+                    data.homeroom || '',
+
+                  createdAt:
+                    data.createdAt || 0
+                });
+              }
+            );
+
+            list.sort(
+              (a, b) =>
+                a.lastName.localeCompare(
+                  b.lastName
+                )
+            );
+
+            callback(list);
+          },
+
+          (err) => {
+
+            console.error(
+              'ERROR loading students from Firestore:',
+              err
+            );
+
+            callback([]);
+          }
+        );
+
+    })
+    .catch((err) => {
+
+      console.error(
+        'Unable to authenticate before loading students:',
+        err
+      );
+
+      callback([]);
     });
-    list.sort((a, b) => a.lastName.localeCompare(b.lastName));
-    callback(list);
-  }, (err) => {
-    console.error('Error subscribing to students:', err);
-  });
-}
 
-export function subscribeToTeachers(callback: (teachers: Teacher[]) => void) {
-  const q = collection(db, TEACHERS_COLLECTION);
-  return onSnapshot(q, (snapshot) => {
-    const list: Teacher[] = [];
-    snapshot.forEach((docSnap) => {
-      const data = docSnap.data();
-      list.push({
-        id: docSnap.id,
-        name: data.name || '',
-        room: data.room || '',
-        subject: data.subject || '',
-        email: data.email || '',
-        active: data.active !== false,
-        department: data.department || '',
-      });
-    });
-    list.sort((a, b) => a.name.localeCompare(b.name));
-    callback(list);
-  }, (err) => {
-    console.error('Error subscribing to teachers:', err);
-  });
-}
 
-export function subscribeToActivePasses(callback: (passes: HallPass[]) => void) {
-  const q = query(
-    collection(db, HALL_PASSES_COLLECTION),
-    where('status', '==', 'ACTIVE')
-  );
-  return onSnapshot(q, (snapshot) => {
-    const list: HallPass[] = [];
-    snapshot.forEach((docSnap) => {
-      const data = docSnap.data();
-      list.push({
-        id: docSnap.id,
-        studentDocId: data.studentDocId || '',
-        studentId: data.studentId || '',
-        studentName: data.studentName || '',
-        teacher: data.teacher || '',
-teacherUid: data.teacherUid || '',
-teacherRoom: data.teacherRoom || '',
-        destination: data.destination || 'Restroom',
-        destinationDetails: data.destinationDetails || '',
-        status: data.status || 'ACTIVE',
-        timeOut: Number(data.timeOut) || Date.now(),
-        timeIn: data.timeIn ? Number(data.timeIn) : null,
-        durationSeconds: data.durationSeconds || 0,
-        durationMinutes: data.durationMinutes || 0,
-        createdAt: Number(data.createdAt) || Date.now(),
-        createdBy: data.createdBy || 'student',
-        endedBy: data.endedBy,
-        notes: data.notes || '',
-        flagged: !!data.flagged
-      });
-    });
-    list.sort((a, b) => b.timeOut - a.timeOut);
-    callback(list);
-  }, (err) => {
-    console.error('Error subscribing to active passes:', err);
-  });
-}
+  return () => {
 
-export function subscribeToAllPasses(callback: (passes: HallPass[]) => void, maxLimit = 200) {
-  const q = collection(db, HALL_PASSES_COLLECTION);
-  return onSnapshot(q, (snapshot) => {
-    const list: HallPass[] = [];
-    snapshot.forEach((docSnap) => {
-      const data = docSnap.data();
-      list.push({
-        id: docSnap.id,
-        studentDocId: data.studentDocId || '',
-        studentId: data.studentId || '',
-        studentName: data.studentName || '',
-        studentEmail: data.studentEmail,
-        teacher: data.teacher || '',
-teacherUid: data.teacherUid || '',
-teacherRoom: data.teacherRoom || '',
-        destination: data.destination || 'Restroom',
-        destinationDetails: data.destinationDetails || '',
-        status: data.status || 'COMPLETED',
-        timeOut: Number(data.timeOut) || Date.now(),
-        timeIn: data.timeIn ? Number(data.timeIn) : null,
-        durationSeconds: data.durationSeconds || 0,
-        durationMinutes: data.durationMinutes || 0,
-        createdAt: Number(data.createdAt) || Date.now(),
-        createdBy: data.createdBy || 'student',
-                endedBy: data.endedBy,
-        notes: data.notes || '',
-        flagged: !!data.flagged,
-        requestId: data.requestId || undefined,
-        isStudentRequest: !!data.isStudentRequest
-      });
-    });
-    list.sort((a, b) => b.timeOut - a.timeOut);
-    callback(list.slice(0, maxLimit));
-  }, (err) => {
-    console.error('Error subscribing to all passes:', err);
-  });
-}
+    cancelled = true;
 
-// Student-scoped pass listener: Only fetches passes belonging to the authenticated student
-export function subscribeToStudentPasses(studentId: string, callback: (passes: HallPass[]) => void) {
-  const q = query(
-    collection(db, HALL_PASSES_COLLECTION),
-    where('studentId', '==', studentId)
-  );
-  return onSnapshot(q, (snapshot) => {
-    const list: HallPass[] = [];
-    snapshot.forEach((docSnap) => {
-      const data = docSnap.data();
-      list.push({
-        id: docSnap.id,
-        studentDocId: data.studentDocId || '',
-        studentId: data.studentId || '',
-        studentName: data.studentName || '',
-        studentEmail: data.studentEmail,
-        teacher: data.teacher || '',
-teacherUid: data.teacherUid || '',
-teacherRoom: data.teacherRoom || '',
-        destination: data.destination || 'Restroom',
-        destinationDetails: data.destinationDetails || '',
-        status: data.status || 'COMPLETED',
-        timeOut: Number(data.timeOut) || Date.now(),
-        timeIn: data.timeIn ? Number(data.timeIn) : null,
-        durationSeconds: data.durationSeconds || 0,
-        durationMinutes: data.durationMinutes || 0,
-        createdAt: Number(data.createdAt) || Date.now(),
-        createdBy: data.createdBy || 'student',
-                endedBy: data.endedBy,
-        notes: data.notes || '',
-        flagged: !!data.flagged,
-        requestId: data.requestId || undefined,
-        isStudentRequest: !!data.isStudentRequest
-      });
-    });
-    list.sort((a, b) => b.timeOut - a.timeOut);
-    callback(list);
-  }, (err) => {
-    console.error(`Error subscribing to passes for student ${studentId}:`, err);
-  });
-}
-
-// Student-scoped active pass listener
-export function subscribeToStudentActivePass(studentId: string, callback: (pass: HallPass | null) => void) {
-  const q = query(
-    collection(db, HALL_PASSES_COLLECTION),
-    where('studentId', '==', studentId),
-    where('status', '==', 'ACTIVE')
-  );
-  return onSnapshot(q, (snapshot) => {
-    if (snapshot.empty) {
-      callback(null);
-      return;
+    if (unsubscribeSnapshot) {
+      unsubscribeSnapshot();
     }
-    const docSnap = snapshot.docs[0];
-    const data = docSnap.data();
-    callback({
-      id: docSnap.id,
-      studentDocId: data.studentDocId || '',
-      studentId: data.studentId || '',
-      studentName: data.studentName || '',
-      studentEmail: data.studentEmail,
-      teacher: data.teacher || '',
-teacherUid: data.teacherUid || '',
-teacherRoom: data.teacherRoom || '',
-      destination: data.destination || 'Restroom',
-      destinationDetails: data.destinationDetails || '',
-      status: data.status || 'ACTIVE',
-      timeOut: Number(data.timeOut) || Date.now(),
-      timeIn: data.timeIn ? Number(data.timeIn) : null,
-      durationSeconds: data.durationSeconds || 0,
-      durationMinutes: data.durationMinutes || 0,
-      createdAt: Number(data.createdAt) || Date.now(),
-      createdBy: data.createdBy || 'student',
-            endedBy: data.endedBy,
-      notes: data.notes || '',
-      flagged: !!data.flagged,
-      requestId: data.requestId || undefined,
-      isStudentRequest: !!data.isStudentRequest
-    });
-  }, (err) => {
-    console.error(`Error subscribing to active pass for student ${studentId}:`, err);
-  });
+  };
 }
 
-// Single student profile listener
-export function subscribeToStudentDoc(studentDocId: string, callback: (student: Student | null) => void) {
-  const docRef = doc(db, STUDENTS_COLLECTION, studentDocId);
-  return onSnapshot(docRef, (docSnap) => {
-    if (!docSnap.exists()) {
-      callback(null);
-      return;
+
+// ============================================================
+// TEACHER LISTENER
+// ============================================================
+
+export function subscribeToTeachers(
+  callback: (teachers: Teacher[]) => void
+) {
+
+  let unsubscribeSnapshot:
+    | (() => void)
+    | null = null;
+
+  let cancelled = false;
+
+  ensureAuthenticated()
+    .then(() => {
+
+      if (cancelled) return;
+
+      const q =
+        collection(
+          db,
+          TEACHERS_COLLECTION
+        );
+
+      unsubscribeSnapshot =
+        onSnapshot(
+          q,
+
+          (snapshot) => {
+
+            const list: Teacher[] = [];
+
+            snapshot.forEach(
+              (docSnap) => {
+
+                const data =
+                  docSnap.data();
+
+                list.push({
+
+                  id:
+                    docSnap.id,
+
+                  name:
+                    data.name || '',
+
+                  room:
+                    data.room || '',
+
+                  subject:
+                    data.subject || '',
+
+                  email:
+                    data.email || '',
+
+                  active:
+                    data.active !== false,
+
+                  department:
+                    data.department || ''
+                });
+              }
+            );
+
+            list.sort(
+              (a, b) =>
+                a.name.localeCompare(
+                  b.name
+                )
+            );
+
+            callback(list);
+          },
+
+          (err) => {
+
+            console.error(
+              'ERROR loading teachers from Firestore:',
+              err
+            );
+
+            callback([]);
+          }
+        );
+
+    })
+    .catch((err) => {
+
+      console.error(
+        'Unable to authenticate before loading teachers:',
+        err
+      );
+
+      callback([]);
+    });
+
+
+  return () => {
+
+    cancelled = true;
+
+    if (unsubscribeSnapshot) {
+      unsubscribeSnapshot();
     }
-    const data = docSnap.data();
-    callback({
-      id: docSnap.id,
-      studentId: data.studentId || '',
-      firstName: data.firstName || '',
-      lastName: data.lastName || '',
-      grade: data.grade || 8,
-      active: data.active !== false,
-      email: data.email || '',
-      homeroom: data.homeroom || '',
-      createdAt: data.createdAt || 0,
-    });
-  }, (err) => {
-    console.error(`Error subscribing to student doc ${studentDocId}:`, err);
-  });
+  };
 }
 
-// ==========================================
+
+// ============================================================
+// ACTIVE HALL PASSES
+// ============================================================
+
+export function subscribeToActivePasses(
+  callback: (passes: HallPass[]) => void
+) {
+
+  let unsubscribeSnapshot:
+    | (() => void)
+    | null = null;
+
+  let cancelled = false;
+
+  ensureAuthenticated()
+    .then(() => {
+
+      if (cancelled) return;
+
+      const q =
+        query(
+          collection(
+            db,
+            HALL_PASSES_COLLECTION
+          ),
+          where(
+            'status',
+            '==',
+            'ACTIVE'
+          )
+        );
+
+      unsubscribeSnapshot =
+        onSnapshot(
+          q,
+
+          (snapshot) => {
+
+            const list: HallPass[] = [];
+
+            snapshot.forEach(
+              (docSnap) => {
+
+                const data =
+                  docSnap.data();
+
+                list.push({
+
+                  id:
+                    docSnap.id,
+
+                  studentDocId:
+                    data.studentDocId || '',
+
+                  studentId:
+                    data.studentId || '',
+
+                  studentName:
+                    data.studentName || '',
+
+                  teacher:
+                    data.teacher || '',
+
+                  teacherUid:
+                    data.teacherUid || '',
+
+                  teacherRoom:
+                    data.teacherRoom || '',
+
+                  destination:
+                    data.destination ||
+                    'Restroom',
+
+                  destinationDetails:
+                    data.destinationDetails ||
+                    '',
+
+                  status:
+                    data.status ||
+                    'ACTIVE',
+
+                  timeOut:
+                    Number(
+                      data.timeOut
+                    ) || Date.now(),
+
+                  timeIn:
+                    data.timeIn
+                      ? Number(
+                          data.timeIn
+                        )
+                      : null,
+
+                  durationSeconds:
+                    data.durationSeconds ||
+                    0,
+
+                  durationMinutes:
+                    data.durationMinutes ||
+                    0,
+
+                  createdAt:
+                    Number(
+                      data.createdAt
+                    ) || Date.now(),
+
+                  createdBy:
+                    data.createdBy ||
+                    'student',
+
+                  endedBy:
+                    data.endedBy,
+
+                  notes:
+                    data.notes || '',
+
+                  flagged:
+                    !!data.flagged
+                });
+              }
+            );
+
+            list.sort(
+              (a, b) =>
+                b.timeOut -
+                a.timeOut
+            );
+
+            callback(list);
+          },
+
+          (err) => {
+
+            console.error(
+              'Error subscribing to active passes:',
+              err
+            );
+
+            callback([]);
+          }
+        );
+
+    })
+    .catch((err) => {
+
+      console.error(
+        'Unable to authenticate before loading active passes:',
+        err
+      );
+
+      callback([]);
+    });
+
+
+  return () => {
+
+    cancelled = true;
+
+    if (unsubscribeSnapshot) {
+      unsubscribeSnapshot();
+    }
+  };
+}
+
+
+// ============================================================
+// ALL HALL PASSES
+// ============================================================
+
+export function subscribeToAllPasses(
+  callback: (passes: HallPass[]) => void,
+  maxLimit = 200
+) {
+
+  let unsubscribeSnapshot:
+    | (() => void)
+    | null = null;
+
+  let cancelled = false;
+
+  ensureAuthenticated()
+    .then(() => {
+
+      if (cancelled) return;
+
+      unsubscribeSnapshot =
+        onSnapshot(
+          collection(
+            db,
+            HALL_PASSES_COLLECTION
+          ),
+
+          (snapshot) => {
+
+            const list: HallPass[] = [];
+
+            snapshot.forEach(
+              (docSnap) => {
+
+                const data =
+                  docSnap.data();
+
+                list.push({
+
+                  id:
+                    docSnap.id,
+
+                  studentDocId:
+                    data.studentDocId || '',
+
+                  studentId:
+                    data.studentId || '',
+
+                  studentName:
+                    data.studentName || '',
+
+                  studentEmail:
+                    data.studentEmail,
+
+                  teacher:
+                    data.teacher || '',
+
+                  teacherUid:
+                    data.teacherUid || '',
+
+                  teacherRoom:
+                    data.teacherRoom || '',
+
+                  destination:
+                    data.destination ||
+                    'Restroom',
+
+                  destinationDetails:
+                    data.destinationDetails ||
+                    '',
+
+                  status:
+                    data.status ||
+                    'COMPLETED',
+
+                  timeOut:
+                    Number(
+                      data.timeOut
+                    ) || Date.now(),
+
+                  timeIn:
+                    data.timeIn
+                      ? Number(
+                          data.timeIn
+                        )
+                      : null,
+
+                  durationSeconds:
+                    data.durationSeconds ||
+                    0,
+
+                  durationMinutes:
+                    data.durationMinutes ||
+                    0,
+
+                  createdAt:
+                    Number(
+                      data.createdAt
+                    ) || Date.now(),
+
+                  createdBy:
+                    data.createdBy ||
+                    'student',
+
+                  endedBy:
+                    data.endedBy,
+
+                  notes:
+                    data.notes || '',
+
+                  flagged:
+                    !!data.flagged,
+
+                  requestId:
+                    data.requestId ||
+                    undefined,
+
+                  isStudentRequest:
+                    !!data.isStudentRequest
+                });
+              }
+            );
+
+            list.sort(
+              (a, b) =>
+                b.timeOut -
+                a.timeOut
+            );
+
+            callback(
+              list.slice(
+                0,
+                maxLimit
+              )
+            );
+          },
+
+          (err) => {
+
+            console.error(
+              'Error subscribing to all passes:',
+              err
+            );
+
+            callback([]);
+          }
+        );
+
+    })
+    .catch((err) => {
+
+      console.error(
+        'Unable to authenticate before loading all passes:',
+        err
+      );
+
+      callback([]);
+    });
+
+
+  return () => {
+
+    cancelled = true;
+
+    if (unsubscribeSnapshot) {
+      unsubscribeSnapshot();
+    }
+  };
+}
+
+
+// ============================================================
+// STUDENT PASSES
+// ============================================================
+
+export function subscribeToStudentPasses(
+  studentId: string,
+  callback: (passes: HallPass[]) => void
+) {
+
+  let unsubscribeSnapshot:
+    | (() => void)
+    | null = null;
+
+  let cancelled = false;
+
+  ensureAuthenticated()
+    .then(() => {
+
+      if (cancelled) return;
+
+      const q =
+        query(
+          collection(
+            db,
+            HALL_PASSES_COLLECTION
+          ),
+          where(
+            'studentId',
+            '==',
+            studentId
+          )
+        );
+
+      unsubscribeSnapshot =
+        onSnapshot(
+          q,
+
+          (snapshot) => {
+
+            const list: HallPass[] = [];
+
+            snapshot.forEach(
+              (docSnap) => {
+
+                const data =
+                  docSnap.data();
+
+                list.push({
+
+                  id:
+                    docSnap.id,
+
+                  studentDocId:
+                    data.studentDocId || '',
+
+                  studentId:
+                    data.studentId || '',
+
+                  studentName:
+                    data.studentName || '',
+
+                  studentEmail:
+                    data.studentEmail,
+
+                  teacher:
+                    data.teacher || '',
+
+                  teacherUid:
+                    data.teacherUid || '',
+
+                  teacherRoom:
+                    data.teacherRoom || '',
+
+                  destination:
+                    data.destination ||
+                    'Restroom',
+
+                  destinationDetails:
+                    data.destinationDetails ||
+                    '',
+
+                  status:
+                    data.status ||
+                    'COMPLETED',
+
+                  timeOut:
+                    Number(
+                      data.timeOut
+                    ) || Date.now(),
+
+                  timeIn:
+                    data.timeIn
+                      ? Number(
+                          data.timeIn
+                        )
+                      : null,
+
+                  durationSeconds:
+                    data.durationSeconds ||
+                    0,
+
+                  durationMinutes:
+                    data.durationMinutes ||
+                    0,
+
+                  createdAt:
+                    Number(
+                      data.createdAt
+                    ) || Date.now(),
+
+                  createdBy:
+                    data.createdBy ||
+                    'student',
+
+                  endedBy:
+                    data.endedBy,
+
+                  notes:
+                    data.notes || '',
+
+                  flagged:
+                    !!data.flagged,
+
+                  requestId:
+                    data.requestId ||
+                    undefined,
+
+                  isStudentRequest:
+                    !!data.isStudentRequest
+                });
+              }
+            );
+
+            list.sort(
+              (a, b) =>
+                b.timeOut -
+                a.timeOut
+            );
+
+            callback(list);
+          },
+
+          (err) => {
+
+            console.error(
+              `Error subscribing to passes for student ${studentId}:`,
+              err
+            );
+
+            callback([]);
+          }
+        );
+
+    })
+    .catch((err) => {
+
+      console.error(
+        'Unable to authenticate before loading student passes:',
+        err
+      );
+
+      callback([]);
+    });
+
+
+  return () => {
+
+    cancelled = true;
+
+    if (unsubscribeSnapshot) {
+      unsubscribeSnapshot();
+    }
+  };
+}
+
+
+// ============================================================
+// STUDENT ACTIVE PASS
+// ============================================================
+
+export function subscribeToStudentActivePass(
+  studentId: string,
+  callback: (pass: HallPass | null) => void
+) {
+
+  let unsubscribeSnapshot:
+    | (() => void)
+    | null = null;
+
+  let cancelled = false;
+
+  ensureAuthenticated()
+    .then(() => {
+
+      if (cancelled) return;
+
+      const q =
+        query(
+          collection(
+            db,
+            HALL_PASSES_COLLECTION
+          ),
+          where(
+            'studentId',
+            '==',
+            studentId
+          ),
+          where(
+            'status',
+            '==',
+            'ACTIVE'
+          )
+        );
+
+      unsubscribeSnapshot =
+        onSnapshot(
+          q,
+
+          (snapshot) => {
+
+            if (snapshot.empty) {
+              callback(null);
+              return;
+            }
+
+            const docSnap =
+              snapshot.docs[0];
+
+            const data =
+              docSnap.data();
+
+            callback({
+
+              id:
+                docSnap.id,
+
+              studentDocId:
+                data.studentDocId || '',
+
+              studentId:
+                data.studentId || '',
+
+              studentName:
+                data.studentName || '',
+
+              studentEmail:
+                data.studentEmail,
+
+              teacher:
+                data.teacher || '',
+
+              teacherUid:
+                data.teacherUid || '',
+
+              teacherRoom:
+                data.teacherRoom || '',
+
+              destination:
+                data.destination ||
+                'Restroom',
+
+              destinationDetails:
+                data.destinationDetails ||
+                '',
+
+              status:
+                data.status ||
+                'ACTIVE',
+
+              timeOut:
+                Number(
+                  data.timeOut
+                ) || Date.now(),
+
+              timeIn:
+                data.timeIn
+                  ? Number(
+                      data.timeIn
+                    )
+                  : null,
+
+              durationSeconds:
+                data.durationSeconds ||
+                0,
+
+              durationMinutes:
+                data.durationMinutes ||
+                0,
+
+              createdAt:
+                Number(
+                  data.createdAt
+                ) || Date.now(),
+
+              createdBy:
+                data.createdBy ||
+                'student',
+
+              endedBy:
+                data.endedBy,
+
+              notes:
+                data.notes || '',
+
+              flagged:
+                !!data.flagged,
+
+              requestId:
+                data.requestId ||
+                undefined,
+
+              isStudentRequest:
+                !!data.isStudentRequest
+            });
+          },
+
+          (err) => {
+
+            console.error(
+              `Error subscribing to active pass for student ${studentId}:`,
+              err
+            );
+
+            callback(null);
+          }
+        );
+
+    })
+    .catch((err) => {
+
+      console.error(
+        'Unable to authenticate before loading active student pass:',
+        err
+      );
+
+      callback(null);
+    });
+
+
+  return () => {
+
+    cancelled = true;
+
+    if (unsubscribeSnapshot) {
+      unsubscribeSnapshot();
+    }
+  };
+}
+
+
+// ============================================================
+// SINGLE STUDENT
+// ============================================================
+
+export function subscribeToStudentDoc(
+  studentDocId: string,
+  callback: (student: Student | null) => void
+) {
+
+  let unsubscribeSnapshot:
+    | (() => void)
+    | null = null;
+
+  let cancelled = false;
+
+  ensureAuthenticated()
+    .then(() => {
+
+      if (cancelled) return;
+
+      const docRef =
+        doc(
+          db,
+          STUDENTS_COLLECTION,
+          studentDocId
+        );
+
+      unsubscribeSnapshot =
+        onSnapshot(
+          docRef,
+
+          (docSnap) => {
+
+            if (!docSnap.exists()) {
+              callback(null);
+              return;
+            }
+
+            const data =
+              docSnap.data();
+
+            callback({
+
+              id:
+                docSnap.id,
+
+              studentId:
+                data.studentId || '',
+
+              firstName:
+                data.firstName || '',
+
+              lastName:
+                data.lastName || '',
+
+              grade:
+                data.grade || 8,
+
+              active:
+                data.active !== false,
+
+              email:
+                data.email || '',
+
+              homeroom:
+                data.homeroom || '',
+
+              createdAt:
+                data.createdAt || 0
+            });
+          },
+
+          (err) => {
+
+            console.error(
+              `Error subscribing to student doc ${studentDocId}:`,
+              err
+            );
+
+            callback(null);
+          }
+        );
+
+    })
+    .catch((err) => {
+
+      console.error(
+        'Unable to authenticate before loading student:',
+        err
+      );
+
+      callback(null);
+    });
+
+
+  return () => {
+
+    cancelled = true;
+
+    if (unsubscribeSnapshot) {
+      unsubscribeSnapshot();
+    }
+  };
+}
+
+
+// ============================================================
 // HALL PASS ACTIONS
-// ==========================================
+// ============================================================
 
-export async function requestHallPass(params: {
-  studentDocId: string;
-  studentId: string;
-  studentName: string;
-  studentEmail?: string;
-teacher: string;
-teacherUid?: string;
-teacherRoom?: string;
-  destination: DestinationType;
-  destinationDetails?: string;
-  createdBy?: 'student' | 'teacher' | 'admin';
-  notes?: string;
-}): Promise<string> {
- const authenticatedUser = await ensureAuthenticated();
+export async function requestHallPass(
+  params: {
+    studentDocId: string;
+    studentId: string;
+    studentName: string;
+    studentEmail?: string;
 
-  // Strict check: Verify student does NOT have an active pass
-  const existingActiveQuery = query(
-    collection(db, HALL_PASSES_COLLECTION),
-    where('studentId', '==', params.studentId),
-    where('status', '==', 'ACTIVE')
-  );
-  
-  const existingSnap = await getDocs(existingActiveQuery);
+    teacher: string;
+    teacherUid?: string;
+    teacherRoom?: string;
+
+    destination: DestinationType;
+    destinationDetails?: string;
+
+    createdBy?:
+      | 'student'
+      | 'teacher'
+      | 'admin';
+
+    notes?: string;
+  }
+): Promise<string> {
+
+  const authenticatedUser =
+    await ensureAuthenticated();
+
+  const existingActiveQuery =
+    query(
+      collection(
+        db,
+        HALL_PASSES_COLLECTION
+      ),
+      where(
+        'studentId',
+        '==',
+        params.studentId
+      ),
+      where(
+        'status',
+        '==',
+        'ACTIVE'
+      )
+    );
+
+  const existingSnap =
+    await getDocs(
+      existingActiveQuery
+    );
+
   if (!existingSnap.empty) {
-    throw new Error(`Active pass already exists for ${params.studentName}. Please return to class before requesting a new pass.`);
+
+    throw new Error(
+      `Active pass already exists for ${params.studentName}. Please return to class before requesting a new pass.`
+    );
   }
 
-  const now = Date.now();
-  const passData: Omit<HallPass, 'id'> = {
-    studentDocId: params.studentDocId,
-    studentId: params.studentId,
-    studentName: params.studentName,
-    studentEmail: params.studentEmail,
-teacher: params.teacher,
-teacherUid: params.teacherUid || authenticatedUser.uid,
-teacherRoom: params.teacherRoom || '',
-    destination: params.destination,
-    destinationDetails: params.destinationDetails || '',
-    status: 'ACTIVE',
-    timeOut: now,
-    timeIn: null,
-    createdAt: now,
-    createdBy: params.createdBy || 'student',
-    notes: params.notes || '',
+  const now =
+    Date.now();
+
+  const passData:
+    Omit<HallPass, 'id'> = {
+
+    studentDocId:
+      params.studentDocId,
+
+    studentId:
+      params.studentId,
+
+    studentName:
+      params.studentName,
+
+    studentEmail:
+      params.studentEmail,
+
+    teacher:
+      params.teacher,
+
+    teacherUid:
+      params.teacherUid ||
+      authenticatedUser.uid,
+
+    teacherRoom:
+      params.teacherRoom ||
+      '',
+
+    destination:
+      params.destination,
+
+    destinationDetails:
+      params.destinationDetails ||
+      '',
+
+    status:
+      'ACTIVE',
+
+    timeOut:
+      now,
+
+    timeIn:
+      null,
+
+    createdAt:
+      now,
+
+    createdBy:
+      params.createdBy ||
+      'student',
+
+    notes:
+      params.notes ||
+      ''
   };
 
-  const docRef = await addDoc(collection(db, HALL_PASSES_COLLECTION), passData);
+  const docRef =
+    await addDoc(
+      collection(
+        db,
+        HALL_PASSES_COLLECTION
+      ),
+      passData
+    );
+
   return docRef.id;
 }
 
-export async function endHallPass(passId: string, endedBy: 'student' | 'teacher' | 'admin' = 'student'): Promise<void> {
+
+export async function endHallPass(
+  passId: string,
+  endedBy:
+    | 'student'
+    | 'teacher'
+    | 'admin' = 'student'
+): Promise<void> {
+
   await ensureAuthenticated();
-  const passDocRef = doc(db, HALL_PASSES_COLLECTION, passId);
-  const passSnap = await getDoc(passDocRef);
+
+  const passDocRef =
+    doc(
+      db,
+      HALL_PASSES_COLLECTION,
+      passId
+    );
+
+  const passSnap =
+    await getDoc(
+      passDocRef
+    );
 
   if (!passSnap.exists()) {
-    throw new Error('Hall pass not found.');
+    throw new Error(
+      'Hall pass not found.'
+    );
   }
 
-  const data = passSnap.data();
-  const timeOut = Number(data.timeOut) || Date.now();
-  const timeIn = Date.now();
-  const durationSeconds = Math.max(1, Math.round((timeIn - timeOut) / 1000));
-  const durationMinutes = Math.max(1, Math.round(durationSeconds / 60));
+  const data =
+    passSnap.data();
 
-  await updateDoc(passDocRef, {
-    status: 'COMPLETED',
-    timeIn: timeIn,
-    durationSeconds: durationSeconds,
-    durationMinutes: durationMinutes,
-    endedBy: endedBy
-  });
+  const timeOut =
+    Number(
+      data.timeOut
+    ) || Date.now();
+
+  const timeIn =
+    Date.now();
+
+  const durationSeconds =
+    Math.max(
+      1,
+      Math.round(
+        (timeIn - timeOut) /
+        1000
+      )
+    );
+
+  const durationMinutes =
+    Math.max(
+      1,
+      Math.round(
+        durationSeconds / 60
+      )
+    );
+
+  await updateDoc(
+    passDocRef,
+    {
+      status:
+        'COMPLETED',
+
+      timeIn:
+        timeIn,
+
+      durationSeconds:
+        durationSeconds,
+
+      durationMinutes:
+        durationMinutes,
+
+      endedBy:
+        endedBy
+    }
+  );
 }
 
-export async function cancelHallPass(passId: string, reason?: string): Promise<void> {
+
+export async function cancelHallPass(
+  passId: string,
+  reason?: string
+): Promise<void> {
+
   await ensureAuthenticated();
-  const passDocRef = doc(db, HALL_PASSES_COLLECTION, passId);
-  await updateDoc(passDocRef, {
-    status: 'CANCELLED',
-    timeIn: Date.now(),
-    notes: reason ? `Cancelled: ${reason}` : 'Cancelled'
-  });
+
+  const passDocRef =
+    doc(
+      db,
+      HALL_PASSES_COLLECTION,
+      passId
+    );
+
+  await updateDoc(
+    passDocRef,
+    {
+      status:
+        'CANCELLED',
+
+      timeIn:
+        Date.now(),
+
+      notes:
+        reason
+          ? `Cancelled: ${reason}`
+          : 'Cancelled'
+    }
+  );
 }
 
-export async function flagHallPass(passId: string, flagged: boolean): Promise<void> {
+
+export async function flagHallPass(
+  passId: string,
+  flagged: boolean
+): Promise<void> {
+
   await ensureAuthenticated();
-  const passDocRef = doc(db, HALL_PASSES_COLLECTION, passId);
-  await updateDoc(passDocRef, { flagged });
+
+  const passDocRef =
+    doc(
+      db,
+      HALL_PASSES_COLLECTION,
+      passId
+    );
+
+  await updateDoc(
+    passDocRef,
+    {
+      flagged
+    }
+  );
 }
 
-// ==========================================
+
+// ============================================================
 // STUDENT REQUESTS
-// ==========================================
+// ============================================================
 
-export async function createStudentRequest(params: {
-  studentDocId: string;
-  studentId: string;
-  studentName: string;
-  studentEmail?: string;
+export async function createStudentRequest(
+  params: {
+    studentDocId: string;
+    studentId: string;
+    studentName: string;
+    studentEmail?: string;
 
-  requestingTeacherId: string;
-  requestingTeacher: string;
-  requestingTeacherRoom?: string;
+    requestingTeacherId: string;
+    requestingTeacher: string;
+    requestingTeacherRoom?: string;
 
-  receivingTeacherId: string;
-  receivingTeacher: string;
-  receivingTeacherRoom?: string;
+    receivingTeacherId: string;
+    receivingTeacher: string;
+    receivingTeacherRoom?: string;
 
-  requestDate: string;
-  period: string;
+    requestDate: string;
+    period: string;
 
-  reason?: string;
-  notes?: string;
-}): Promise<string> {
+    reason?: string;
+    notes?: string;
+  }
+): Promise<string> {
+
   await ensureAuthenticated();
 
   if (!params.requestingTeacherId) {
-    throw new Error('Requesting teacher could not be identified.');
+    throw new Error(
+      'Requesting teacher could not be identified.'
+    );
   }
 
   if (!params.receivingTeacherId) {
@@ -750,18 +2229,40 @@ export async function createStudentRequest(params: {
     );
   }
 
-  if (!params.studentDocId || !params.studentId) {
-    throw new Error('A valid student is required.');
+  if (
+    !params.studentDocId ||
+    !params.studentId
+  ) {
+    throw new Error(
+      'A valid student is required.'
+    );
   }
 
-  const existingRequestQuery = query(
-    collection(db, STUDENT_REQUESTS_COLLECTION),
-    where('studentId', '==', params.studentId),
-    where('status', 'in', ['PENDING', 'ACCEPTED'])
-  );
+  const existingRequestQuery =
+    query(
+      collection(
+        db,
+        STUDENT_REQUESTS_COLLECTION
+      ),
+      where(
+        'studentId',
+        '==',
+        params.studentId
+      ),
+      where(
+        'status',
+        'in',
+        [
+          'PENDING',
+          'ACCEPTED'
+        ]
+      )
+    );
 
   const existingRequestSnap =
-    await getDocs(existingRequestQuery);
+    await getDocs(
+      existingRequestQuery
+    );
 
   if (!existingRequestSnap.empty) {
     throw new Error(
@@ -769,13 +2270,23 @@ export async function createStudentRequest(params: {
     );
   }
 
-  const now = Date.now();
+  const now =
+    Date.now();
 
-  const requestData: Omit<StudentRequest, 'id'> = {
-    studentDocId: params.studentDocId,
-    studentId: params.studentId,
-    studentName: params.studentName,
-    studentEmail: params.studentEmail,
+  const requestData:
+    Omit<StudentRequest, 'id'> = {
+
+    studentDocId:
+      params.studentDocId,
+
+    studentId:
+      params.studentId,
+
+    studentName:
+      params.studentName,
+
+    studentEmail:
+      params.studentEmail,
 
     requestingTeacherId:
       params.requestingTeacherId,
@@ -784,7 +2295,8 @@ export async function createStudentRequest(params: {
       params.requestingTeacher,
 
     requestingTeacherRoom:
-      params.requestingTeacherRoom || '',
+      params.requestingTeacherRoom ||
+      '',
 
     receivingTeacherId:
       params.receivingTeacherId,
@@ -793,162 +2305,251 @@ export async function createStudentRequest(params: {
       params.receivingTeacher,
 
     receivingTeacherRoom:
-      params.receivingTeacherRoom || '',
+      params.receivingTeacherRoom ||
+      '',
 
-    requestDate: params.requestDate,
-    period: params.period,
+    requestDate:
+      params.requestDate,
 
-    reason: params.reason || '',
-    notes: params.notes || '',
+    period:
+      params.period,
 
-    status: 'PENDING',
+    reason:
+      params.reason ||
+      '',
 
-    createdAt: now
+    notes:
+      params.notes ||
+      '',
+
+    status:
+      'PENDING',
+
+    createdAt:
+      now
   };
 
-  const docRef = await addDoc(
-    collection(db, STUDENT_REQUESTS_COLLECTION),
-    requestData
-  );
+  const docRef =
+    await addDoc(
+      collection(
+        db,
+        STUDENT_REQUESTS_COLLECTION
+      ),
+      requestData
+    );
 
   return docRef.id;
 }
 
 
-// ==========================================
-// REAL-TIME STUDENT REQUEST LISTENER
-// ==========================================
+// ============================================================
+// STUDENT REQUEST LISTENER
+// ============================================================
 
 export function subscribeToStudentRequests(
-  callback: (requests: StudentRequest[]) => void
+  callback: (
+    requests: StudentRequest[]
+  ) => void
 ) {
-  const q = collection(
-    db,
-    STUDENT_REQUESTS_COLLECTION
-  );
 
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const list: StudentRequest[] = [];
+  let unsubscribeSnapshot:
+    | (() => void)
+    | null = null;
 
-      snapshot.forEach((docSnap) => {
-        const data = docSnap.data();
+  let cancelled = false;
 
-        list.push({
-          id: docSnap.id,
+  ensureAuthenticated()
+    .then(() => {
 
-          studentDocId:
-            data.studentDocId || '',
+      if (cancelled) return;
 
-          studentId:
-            data.studentId || '',
+      unsubscribeSnapshot =
+        onSnapshot(
+          collection(
+            db,
+            STUDENT_REQUESTS_COLLECTION
+          ),
 
-          studentName:
-            data.studentName || '',
+          (snapshot) => {
 
-          studentEmail:
-            data.studentEmail || '',
+            const list:
+              StudentRequest[] = [];
 
-          requestingTeacherId:
-            data.requestingTeacherId || '',
+            snapshot.forEach(
+              (docSnap) => {
 
-          requestingTeacher:
-            data.requestingTeacher || '',
+                const data =
+                  docSnap.data();
 
-          requestingTeacherRoom:
-            data.requestingTeacherRoom || '',
+                list.push({
 
-          receivingTeacherId:
-            data.receivingTeacherId || '',
+                  id:
+                    docSnap.id,
 
-          receivingTeacher:
-            data.receivingTeacher || '',
+                  studentDocId:
+                    data.studentDocId ||
+                    '',
 
-          receivingTeacherRoom:
-            data.receivingTeacherRoom || '',
+                  studentId:
+                    data.studentId ||
+                    '',
 
-          requestDate:
-            data.requestDate || '',
+                  studentName:
+                    data.studentName ||
+                    '',
 
-          period:
-            data.period || '',
+                  studentEmail:
+                    data.studentEmail ||
+                    '',
 
-          reason:
-            data.reason || '',
+                  requestingTeacherId:
+                    data.requestingTeacherId ||
+                    '',
 
-          notes:
-            data.notes || '',
+                  requestingTeacher:
+                    data.requestingTeacher ||
+                    '',
 
-          status:
-            data.status || 'PENDING',
+                  requestingTeacherRoom:
+                    data.requestingTeacherRoom ||
+                    '',
 
-          hallPassId:
-            data.hallPassId || undefined,
+                  receivingTeacherId:
+                    data.receivingTeacherId ||
+                    '',
 
-          createdAt:
-            Number(data.createdAt) || Date.now(),
+                  receivingTeacher:
+                    data.receivingTeacher ||
+                    '',
 
-          acceptedAt:
-            data.acceptedAt
-              ? Number(data.acceptedAt)
-              : undefined,
+                  receivingTeacherRoom:
+                    data.receivingTeacherRoom ||
+                    '',
 
-          arrivedAt:
-            data.arrivedAt
-              ? Number(data.arrivedAt)
-              : undefined,
+                  requestDate:
+                    data.requestDate ||
+                    '',
 
-          completedAt:
-            data.completedAt
-              ? Number(data.completedAt)
-              : undefined,
+                  period:
+                    data.period ||
+                    '',
 
-          cancelledAt:
-            data.cancelledAt
-              ? Number(data.cancelledAt)
-              : undefined
-        });
-      });
+                  reason:
+                    data.reason ||
+                    '',
 
-      list.sort(
-        (a, b) =>
-          b.createdAt - a.createdAt
-      );
+                  notes:
+                    data.notes ||
+                    '',
 
-      callback(list);
-    },
-    (err) => {
+                  status:
+                    data.status ||
+                    'PENDING',
+
+                  hallPassId:
+                    data.hallPassId ||
+                    undefined,
+
+                  createdAt:
+                    Number(
+                      data.createdAt
+                    ) || Date.now(),
+
+                  acceptedAt:
+                    data.acceptedAt
+                      ? Number(
+                          data.acceptedAt
+                        )
+                      : undefined,
+
+                  arrivedAt:
+                    data.arrivedAt
+                      ? Number(
+                          data.arrivedAt
+                        )
+                      : undefined,
+
+                  completedAt:
+                    data.completedAt
+                      ? Number(
+                          data.completedAt
+                        )
+                      : undefined,
+
+                  cancelledAt:
+                    data.cancelledAt
+                      ? Number(
+                          data.cancelledAt
+                        )
+                      : undefined
+                });
+              }
+            );
+
+            list.sort(
+              (a, b) =>
+                b.createdAt -
+                a.createdAt
+            );
+
+            callback(list);
+          },
+
+          (err) => {
+
+            console.error(
+              'Error subscribing to student requests:',
+              err
+            );
+
+            callback([]);
+          }
+        );
+
+    })
+    .catch((err) => {
+
       console.error(
-        'Error subscribing to student requests:',
+        'Unable to authenticate before loading student requests:',
         err
       );
+
+      callback([]);
+    });
+
+
+  return () => {
+
+    cancelled = true;
+
+    if (unsubscribeSnapshot) {
+      unsubscribeSnapshot();
     }
-  );
+  };
 }
 
 
-// ==========================================
+// ============================================================
 // ACCEPT STUDENT REQUEST
-//
-// This does TWO things:
-// 1. Changes request to ACCEPTED
-// 2. Automatically creates an ACTIVE hall pass
-// ==========================================
+// ============================================================
 
 export async function acceptStudentRequest(
   requestId: string
 ): Promise<string> {
+
   await ensureAuthenticated();
 
-  const requestRef = doc(
-    db,
-    STUDENT_REQUESTS_COLLECTION,
-    requestId
-  );
+  const requestRef =
+    doc(
+      db,
+      STUDENT_REQUESTS_COLLECTION,
+      requestId
+    );
 
   const requestSnap =
-    await getDoc(requestRef);
+    await getDoc(
+      requestRef
+    );
 
   if (!requestSnap.exists()) {
     throw new Error(
@@ -962,29 +2563,37 @@ export async function acceptStudentRequest(
       'id'
     >;
 
-  if (request.status !== 'PENDING') {
+  if (
+    request.status !==
+    'PENDING'
+  ) {
     throw new Error(
       'This student request has already been handled.'
     );
   }
 
-  // Make sure student does not already have an active pass.
-  const existingPassQuery = query(
-    collection(db, HALL_PASSES_COLLECTION),
-    where(
-      'studentId',
-      '==',
-      request.studentId
-    ),
-    where(
-      'status',
-      '==',
-      'ACTIVE'
-    )
-  );
+  const existingPassQuery =
+    query(
+      collection(
+        db,
+        HALL_PASSES_COLLECTION
+      ),
+      where(
+        'studentId',
+        '==',
+        request.studentId
+      ),
+      where(
+        'status',
+        '==',
+        'ACTIVE'
+      )
+    );
 
   const existingPassSnap =
-    await getDocs(existingPassQuery);
+    await getDocs(
+      existingPassQuery
+    );
 
   if (!existingPassSnap.empty) {
     throw new Error(
@@ -992,14 +2601,12 @@ export async function acceptStudentRequest(
     );
   }
 
-  const now = Date.now();
+  const now =
+    Date.now();
 
-  // The receiving teacher is the teacher the
-  // student is leaving FROM.
-  //
-  // This means the pass appears on that teacher's
-  // "Students Out From My Class" dashboard.
-  const passData: Omit<HallPass, 'id'> = {
+  const passData:
+    Omit<HallPass, 'id'> = {
+
     studentDocId:
       request.studentDocId,
 
@@ -1015,11 +2622,18 @@ export async function acceptStudentRequest(
     teacher:
       request.receivingTeacher,
 
+    /*
+     * IMPORTANT:
+     * We deliberately do not put the receiving teacher's
+     * Firebase UID here because the request system already
+     * identifies the teacher by receivingTeacherId.
+     */
     teacherUid:
       undefined,
 
     teacherRoom:
-      request.receivingTeacherRoom || '',
+      request.receivingTeacherRoom ||
+      '',
 
     destination:
       'Another Classroom',
@@ -1042,27 +2656,38 @@ export async function acceptStudentRequest(
     createdBy:
       'teacher',
 
-        notes:
+    notes:
       request.reason
         ? `Student request: ${request.reason}`
         : 'Student requested by another teacher.',
 
-    requestId: requestId,
+    requestId:
+      requestId,
 
-    isStudentRequest: true
+    isStudentRequest:
+      true
   };
 
-  const passRef = await addDoc(
-    collection(db, HALL_PASSES_COLLECTION),
-    passData
-  );
+  const passRef =
+    await addDoc(
+      collection(
+        db,
+        HALL_PASSES_COLLECTION
+      ),
+      passData
+    );
 
   await updateDoc(
     requestRef,
     {
-      status: 'ACCEPTED',
-      hallPassId: passRef.id,
-      acceptedAt: now
+      status:
+        'ACCEPTED',
+
+      hallPassId:
+        passRef.id,
+
+      acceptedAt:
+        now
     }
   );
 
@@ -1070,27 +2695,27 @@ export async function acceptStudentRequest(
 }
 
 
-// ==========================================
-// MARK STUDENT AS ARRIVED
-//
-// The ORIGINAL REQUESTING TEACHER calls this.
-// This completes the student request and ends
-// the automatically-created hall pass.
-// ==========================================
+// ============================================================
+// MARK STUDENT REQUEST ARRIVED
+// ============================================================
 
 export async function markStudentRequestArrived(
   requestId: string
 ): Promise<void> {
+
   await ensureAuthenticated();
 
-  const requestRef = doc(
-    db,
-    STUDENT_REQUESTS_COLLECTION,
-    requestId
-  );
+  const requestRef =
+    doc(
+      db,
+      STUDENT_REQUESTS_COLLECTION,
+      requestId
+    );
 
   const requestSnap =
-    await getDoc(requestRef);
+    await getDoc(
+      requestRef
+    );
 
   if (!requestSnap.exists()) {
     throw new Error(
@@ -1104,38 +2729,48 @@ export async function markStudentRequestArrived(
       'id'
     >;
 
-  if (request.status !== 'ACCEPTED') {
+  if (
+    request.status !==
+    'ACCEPTED'
+  ) {
     throw new Error(
       'This student is not currently traveling to your classroom.'
     );
   }
 
-  const now = Date.now();
+  const now =
+    Date.now();
 
-  // End the automatic hall pass.
   if (request.hallPassId) {
-    const passRef = doc(
-      db,
-      HALL_PASSES_COLLECTION,
-      request.hallPassId
-    );
+
+    const passRef =
+      doc(
+        db,
+        HALL_PASSES_COLLECTION,
+        request.hallPassId
+      );
 
     const passSnap =
-      await getDoc(passRef);
+      await getDoc(
+        passRef
+      );
 
     if (passSnap.exists()) {
+
       const passData =
         passSnap.data();
 
       const timeOut =
-        Number(passData.timeOut) ||
-        now;
+        Number(
+          passData.timeOut
+        ) || now;
 
       const durationSeconds =
         Math.max(
           1,
           Math.round(
-            (now - timeOut) / 1000
+            (now - timeOut) /
+            1000
           )
         );
 
@@ -1150,11 +2785,18 @@ export async function markStudentRequestArrived(
       await updateDoc(
         passRef,
         {
-          status: 'COMPLETED',
-          timeIn: now,
+          status:
+            'COMPLETED',
+
+          timeIn:
+            now,
+
           durationSeconds,
+
           durationMinutes,
-          endedBy: 'teacher'
+
+          endedBy:
+            'teacher'
         }
       );
     }
@@ -1163,31 +2805,40 @@ export async function markStudentRequestArrived(
   await updateDoc(
     requestRef,
     {
-      status: 'COMPLETED',
-      arrivedAt: now,
-      completedAt: now
+      status:
+        'COMPLETED',
+
+      arrivedAt:
+        now,
+
+      completedAt:
+        now
     }
   );
 }
 
 
-// ==========================================
+// ============================================================
 // CANCEL STUDENT REQUEST
-// ==========================================
+// ============================================================
 
 export async function cancelStudentRequest(
   requestId: string
 ): Promise<void> {
+
   await ensureAuthenticated();
 
-  const requestRef = doc(
-    db,
-    STUDENT_REQUESTS_COLLECTION,
-    requestId
-  );
+  const requestRef =
+    doc(
+      db,
+      STUDENT_REQUESTS_COLLECTION,
+      requestId
+    );
 
   const requestSnap =
-    await getDoc(requestRef);
+    await getDoc(
+      requestRef
+    );
 
   if (!requestSnap.exists()) {
     throw new Error(
@@ -1201,30 +2852,41 @@ export async function cancelStudentRequest(
       'id'
     >;
 
-  const now = Date.now();
+  const now =
+    Date.now();
 
-  // If the request was already accepted,
-  // cancel its active pass too.
   if (
-    request.status === 'ACCEPTED' &&
+    request.status ===
+      'ACCEPTED' &&
     request.hallPassId
   ) {
-    const passRef = doc(
-      db,
-      HALL_PASSES_COLLECTION,
-      request.hallPassId
-    );
+
+    const passRef =
+      doc(
+        db,
+        HALL_PASSES_COLLECTION,
+        request.hallPassId
+      );
 
     const passSnap =
-      await getDoc(passRef);
+      await getDoc(
+        passRef
+      );
 
     if (passSnap.exists()) {
+
       await updateDoc(
         passRef,
         {
-          status: 'CANCELLED',
-          timeIn: now,
-          endedBy: 'teacher',
+          status:
+            'CANCELLED',
+
+          timeIn:
+            now,
+
+          endedBy:
+            'teacher',
+
           notes:
             'Cancelled with student request.'
         }
@@ -1235,38 +2897,37 @@ export async function cancelStudentRequest(
   await updateDoc(
     requestRef,
     {
-      status: 'CANCELLED',
-      cancelledAt: now
+      status:
+        'CANCELLED',
+
+      cancelledAt:
+        now
     }
   );
 }
 
 
-// ==========================================
+// ============================================================
 // COMPLETE STUDENT REQUEST
-//
-// Kept for compatibility with your current
-// TeacherDashboard code.
-//
-// If a request is still PENDING, this simply
-// marks it completed.
-// If it is ACCEPTED, use markStudentRequestArrived
-// instead so the hall pass is also completed.
-// ==========================================
+// ============================================================
 
 export async function completeStudentRequest(
   requestId: string
 ): Promise<void> {
+
   await ensureAuthenticated();
 
-  const requestRef = doc(
-    db,
-    STUDENT_REQUESTS_COLLECTION,
-    requestId
-  );
+  const requestRef =
+    doc(
+      db,
+      STUDENT_REQUESTS_COLLECTION,
+      requestId
+    );
 
   const requestSnap =
-    await getDoc(requestRef);
+    await getDoc(
+      requestRef
+    );
 
   if (!requestSnap.exists()) {
     throw new Error(
@@ -1280,74 +2941,182 @@ export async function completeStudentRequest(
       'id'
     >;
 
-  if (request.status === 'ACCEPTED') {
+  if (
+    request.status ===
+    'ACCEPTED'
+  ) {
+
     await markStudentRequestArrived(
       requestId
     );
+
     return;
   }
 
   await updateDoc(
     requestRef,
     {
-      status: 'COMPLETED',
-      completedAt: Date.now()
+      status:
+        'COMPLETED',
+
+      completedAt:
+        Date.now()
     }
   );
 }
-// ==========================================
-// STUDENT ROSTER MANAGEMENT
-// ==========================================
 
-export async function addStudent(studentData: Omit<Student, 'id'>): Promise<string> {
+
+// ============================================================
+// STUDENT ROSTER MANAGEMENT
+// ============================================================
+
+export async function addStudent(
+  studentData: Omit<Student, 'id'>
+): Promise<string> {
+
   await ensureAuthenticated();
-  // Check studentId uniqueness
-  const existingQ = query(
-    collection(db, STUDENTS_COLLECTION), 
-    where('studentId', '==', studentData.studentId)
-  );
-  const snap = await getDocs(existingQ);
+
+  const existingQ =
+    query(
+      collection(
+        db,
+        STUDENTS_COLLECTION
+      ),
+      where(
+        'studentId',
+        '==',
+        studentData.studentId
+      )
+    );
+
+  const snap =
+    await getDocs(existingQ);
+
   if (!snap.empty) {
-    throw new Error(`Student ID #${studentData.studentId} is already registered.`);
+    throw new Error(
+      `Student ID #${studentData.studentId} is already registered.`
+    );
   }
 
-  const docRef = await addDoc(collection(db, STUDENTS_COLLECTION), {
-    ...studentData,
-    createdAt: Date.now()
-  });
+  const docRef =
+    await addDoc(
+      collection(
+        db,
+        STUDENTS_COLLECTION
+      ),
+      {
+        ...studentData,
+        createdAt:
+          Date.now()
+      }
+    );
+
   return docRef.id;
 }
 
-export async function updateStudent(id: string, studentData: Partial<Student>): Promise<void> {
+
+export async function updateStudent(
+  id: string,
+  studentData: Partial<Student>
+): Promise<void> {
+
   await ensureAuthenticated();
-  const studentRef = doc(db, STUDENTS_COLLECTION, id);
-  await updateDoc(studentRef, studentData);
+
+  const studentRef =
+    doc(
+      db,
+      STUDENTS_COLLECTION,
+      id
+    );
+
+  await updateDoc(
+    studentRef,
+    studentData
+  );
 }
 
-export async function deleteStudent(id: string): Promise<void> {
+
+export async function deleteStudent(
+  id: string
+): Promise<void> {
+
   await ensureAuthenticated();
-  const studentRef = doc(db, STUDENTS_COLLECTION, id);
-  await deleteDoc(studentRef);
+
+  const studentRef =
+    doc(
+      db,
+      STUDENTS_COLLECTION,
+      id
+    );
+
+  await deleteDoc(
+    studentRef
+  );
 }
 
-// ==========================================
+
+// ============================================================
 // TEACHER ROSTER MANAGEMENT
-// ==========================================
+// ============================================================
 
-export async function addTeacher(teacherData: Omit<Teacher, 'id'>): Promise<string> {
+export async function addTeacher(
+  teacherData: Omit<Teacher, 'id'>
+): Promise<string> {
+
   await ensureAuthenticated();
-  const docRef = await addDoc(collection(db, TEACHERS_COLLECTION), teacherData);
+
+  const docRef =
+    await addDoc(
+      collection(
+        db,
+        TEACHERS_COLLECTION
+      ),
+      {
+        ...teacherData,
+        createdAt:
+          Date.now()
+      }
+    );
+
   return docRef.id;
 }
 
-export async function updateTeacher(id: string, teacherData: Partial<Teacher>): Promise<void> {
+
+export async function updateTeacher(
+  id: string,
+  teacherData: Partial<Teacher>
+): Promise<void> {
+
   await ensureAuthenticated();
-  const teacherRef = doc(db, TEACHERS_COLLECTION, id);
-  await updateDoc(teacherRef, teacherData);
+
+  const teacherRef =
+    doc(
+      db,
+      TEACHERS_COLLECTION,
+      id
+    );
+
+  await updateDoc(
+    teacherRef,
+    teacherData
+  );
 }
 
-export async function deleteTeacher(id: string): Promise<void> {
+
+export async function deleteTeacher(
+  id: string
+): Promise<void> {
+
   await ensureAuthenticated();
-  const teacherRef = doc(db, TEACHERS_COLLECTION, id);
-  await deleteDoc(teacherRef);
+
+  const teacherRef =
+    doc(
+      db,
+      TEACHERS_COLLECTION,
+      id
+    );
+
+  await deleteDoc(
+    teacherRef
+  );
 }
