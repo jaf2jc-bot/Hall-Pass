@@ -40,6 +40,10 @@ export interface HallPass {
   endedBy?: 'student' | 'teacher' | 'admin';
   notes?: string;
   flagged?: boolean;
+
+  // Student request tracking
+  requestId?: string;
+  isStudentRequest?: boolean;
 }
 
 export type StudentRequestStatus =
