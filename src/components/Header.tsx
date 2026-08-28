@@ -102,28 +102,28 @@ export const Header: React.FC<HeaderProps> = ({
   // NAVIGATION ITEMS
   // ============================================================
   const allNavItems = [
-    {
-      id: 'student',
-      label: 'My Hall Pass',
-      icon: GraduationCap,
-      roles: ['student', 'teacher', 'admin']
-    },
-    {
-      id: 'currently-out',
-      label: 'Live Hallway Monitor',
-      icon: Eye,
-      roles: ['teacher', 'admin'],
-      badge:
-        activePassCount > 0
-          ? activePassCount
-          : undefined
-    },
-    {
-      id: 'teacher',
-      label: 'Teacher Desk',
-      icon: UserCheck,
-      roles: ['teacher', 'admin']
-    },
+  {
+    id: 'student',
+    label: 'My Hall Pass',
+    icon: GraduationCap,
+    roles: ['student', 'teacher', 'admin']
+  },
+  {
+    id: 'teacher',
+    label: 'Teacher Desk',
+    icon: UserCheck,
+    roles: ['teacher', 'admin']
+  },
+  {
+    id: 'currently-out',
+    label: 'Live Hallway Monitor',
+    icon: Eye,
+    roles: ['teacher', 'admin'],
+    badge:
+      activePassCount > 0
+        ? activePassCount
+        : undefined
+  },
     {
       id: 'admin',
       label: 'Admin Security & Rosters',
