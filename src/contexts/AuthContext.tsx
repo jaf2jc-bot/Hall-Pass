@@ -107,7 +107,7 @@ export const AuthProvider: React.FC<{
 
   /*
    * ============================================================
-   * FIREBASE AUTHENTICATION + SCHOOL DATA
+   * FIREBASE AUTHENTICATION
    * ============================================================
    */
 
@@ -126,9 +126,30 @@ export const AuthProvider: React.FC<{
 
 
     /*
-     * ------------------------------------------------------------
+     * These variables keep track of the school data while
+     * Firebase subscriptions are loading.
+     *
+     * This is important because Google authentication can finish
+     * before the Teachers collection has finished loading.
+     */
+
+    let loadedStudents:
+      Student[] = [];
+
+    let loadedTeachers:
+      Teacher[] = [];
+
+    let studentsLoaded =
+      false;
+
+    let teachersLoaded =
+      false;
+
+
+    /*
+     * ============================================================
      * PROCESS AUTHENTICATED USER
-     * ------------------------------------------------------------
+     * ============================================================
      */
 
     const processAuthenticatedUser =
@@ -153,7 +174,7 @@ export const AuthProvider: React.FC<{
           user.email || '';
 
         const emailLower =
-          email.toLowerCase();
+          email.trim().toLowerCase();
 
 
         /*
@@ -193,9 +214,9 @@ export const AuthProvider: React.FC<{
 
 
         /*
-         * --------------------------------------------------------
-         * CHECK FOR ADMIN
-         * --------------------------------------------------------
+         * ========================================================
+         * ADMIN ACCOUNT
+         * ========================================================
          */
 
         const isAdminAccount =
@@ -278,6 +299,8 @@ export const AuthProvider: React.FC<{
           });
 
 
+          setActiveStudent(null);
+
           setIsLoading(false);
 
           return;
@@ -285,17 +308,23 @@ export const AuthProvider: React.FC<{
 
 
         /*
-         * --------------------------------------------------------
+         * ========================================================
          * FIND TEACHER BY EMAIL
-         * --------------------------------------------------------
+         * ========================================================
          *
-         * THIS IS THE IMPORTANT PART.
+         * THIS IS THE MAIN CHANGE.
          *
-         * We do NOT need to know the teacher's Firebase UID
-         * ahead of time.
+         * We do NOT need the teacher's Firebase UID.
          *
-         * We use their school email address to find the
-         * teacher record.
+         * The teacher is identified by their school email.
+         *
+         * Example:
+         *
+         * teachers/
+         *   manderson26@bearworks.jackson.sparcc.org
+         *
+         * When that person logs in with Google, Firebase gives
+         * us their email and we find the teacher record.
          */
 
         const matchingTeacher =
@@ -305,14 +334,14 @@ export const AuthProvider: React.FC<{
               teacher.email
                 .trim()
                 .toLowerCase() ===
-                emailLower
+              emailLower
           );
 
 
         /*
-         * --------------------------------------------------------
+         * ========================================================
          * FIND STUDENT BY EMAIL
-         * --------------------------------------------------------
+         * ========================================================
          */
 
         const matchingStudent =
@@ -322,19 +351,7 @@ export const AuthProvider: React.FC<{
               student.email
                 .trim()
                 .toLowerCase() ===
-                emailLower
-          );
-
-
-        /*
-         * --------------------------------------------------------
-         * GET EXISTING USER PROFILE
-         * --------------------------------------------------------
-         */
-
-        let profile =
-          await getUserProfile(
-            user.uid
+              emailLower
           );
 
 
@@ -347,20 +364,21 @@ export const AuthProvider: React.FC<{
         if (matchingTeacher) {
 
           console.log(
-            '[AuthContext] Teacher recognized by email:',
-            matchingTeacher.name
+            '[AuthContext] TEACHER MATCH FOUND:',
+            matchingTeacher.name,
+            matchingTeacher.email
           );
 
 
           /*
-           * The teacher is ALWAYS treated as a teacher
-           * when their email exists in the Teachers collection.
+           * The teacher's Firebase UID is NOT needed in advance.
            *
-           * This also fixes an existing user profile that was
-           * previously created as "student".
+           * We create/update the Users profile using the UID
+           * Firebase just gave us.
            */
 
-          profile = {
+          const teacherProfile:
+            UserProfile = {
 
             uid:
               user.uid,
@@ -396,16 +414,14 @@ export const AuthProvider: React.FC<{
 
 
           /*
-           * Save the authenticated user.
+           * Save/update the Users document.
            *
-           * The Firebase UID belongs in the USERS profile.
-           *
-           * The teacher record can continue using the teacher's
-           * email as its document ID.
+           * This means an account that previously existed as a
+           * student will automatically be corrected to teacher.
            */
 
           await saveUserProfile(
-            profile
+            teacherProfile
           );
 
 
@@ -415,7 +431,7 @@ export const AuthProvider: React.FC<{
 
 
           setCurrentUser(
-            profile
+            teacherProfile
           );
 
           setCurrentRole(
@@ -443,13 +459,14 @@ export const AuthProvider: React.FC<{
         if (matchingStudent) {
 
           console.log(
-            '[AuthContext] Student recognized by email:',
+            '[AuthContext] STUDENT MATCH FOUND:',
             matchingStudent.firstName,
             matchingStudent.lastName
           );
 
 
-          profile = {
+          const studentProfile:
+            UserProfile = {
 
             uid:
               user.uid,
@@ -483,7 +500,7 @@ export const AuthProvider: React.FC<{
 
 
           await saveUserProfile(
-            profile
+            studentProfile
           );
 
 
@@ -493,7 +510,7 @@ export const AuthProvider: React.FC<{
 
 
           setCurrentUser(
-            profile
+            studentProfile
           );
 
           setCurrentRole(
@@ -514,88 +531,38 @@ export const AuthProvider: React.FC<{
 
         /*
          * ========================================================
-         * EXISTING USER WHO IS NOT IN TEACHERS/STUDENTS
+         * EXISTING USER
          * ========================================================
          */
 
-        if (profile) {
+        const existingProfile =
+          await getUserProfile(
+            user.uid
+          );
+
+
+        if (existingProfile) {
 
           console.log(
             '[AuthContext] Existing user profile found:',
-            profile.email,
-            profile.role
+            existingProfile.email,
+            existingProfile.role
           );
 
 
           /*
-           * Keep the existing role unless the user was identified
-           * above as a teacher or student.
+           * If the person was previously saved as a teacher
+           * or student, reconnect their school record.
            */
 
-          setCurrentUser(
-            profile
-          );
-
-          setCurrentRole(
-            profile.role
-          );
+          let profile =
+            existingProfile;
 
 
           /*
-           * Try to reconnect their student profile.
-           */
-
-          if (
-            profile.role === 'student'
-          ) {
-
-            let matchedStudent:
-              Student | undefined;
-
-
-            if (
-              profile.studentId
-            ) {
-
-              matchedStudent =
-                studentList.find(
-                  (student) =>
-                    student.studentId ===
-                    profile.studentId
-                );
-            }
-
-
-            if (
-              !matchedStudent
-            ) {
-
-              matchedStudent =
-                studentList.find(
-                  (student) =>
-                    student.email &&
-                    profile.email &&
-                    student.email
-                      .toLowerCase() ===
-                    profile.email
-                      .toLowerCase()
-                );
-            }
-
-
-            if (
-              matchedStudent
-            ) {
-
-              setActiveStudent(
-                matchedStudent
-              );
-            }
-          }
-
-
-          /*
-           * Try to reconnect their teacher profile.
+           * ------------------------------------------------------
+           * EXISTING TEACHER
+           * ------------------------------------------------------
            */
 
           if (
@@ -629,8 +596,10 @@ export const AuthProvider: React.FC<{
                     teacher.email &&
                     profile.email &&
                     teacher.email
+                      .trim()
                       .toLowerCase() ===
                     profile.email
+                      .trim()
                       .toLowerCase()
                 );
             }
@@ -647,6 +616,108 @@ export const AuthProvider: React.FC<{
           }
 
 
+          /*
+           * ------------------------------------------------------
+           * EXISTING STUDENT
+           * ------------------------------------------------------
+           */
+
+          if (
+            profile.role === 'student'
+          ) {
+
+            let matchedStudent:
+              Student | undefined;
+
+
+            if (
+              profile.studentId
+            ) {
+
+              matchedStudent =
+                studentList.find(
+                  (student) =>
+                    student.studentId ===
+                    profile.studentId
+                );
+            }
+
+
+            if (
+              !matchedStudent
+            ) {
+
+              matchedStudent =
+                studentList.find(
+                  (student) =>
+                    student.email &&
+                    profile.email &&
+                    student.email
+                      .trim()
+                      .toLowerCase() ===
+                    profile.email
+                      .trim()
+                      .toLowerCase()
+                );
+            }
+
+
+            if (
+              matchedStudent
+            ) {
+
+              setActiveStudent(
+                matchedStudent
+              );
+            }
+          }
+
+
+          /*
+           * ------------------------------------------------------
+           * EXISTING ADMIN
+           * ------------------------------------------------------
+           */
+
+          if (
+            profile.role === 'admin'
+          ) {
+
+            setActiveTeacher({
+
+              id:
+                profile.uid,
+
+              name:
+                profile.displayName,
+
+              room:
+                profile.room ||
+                'Main Administrative Office',
+
+              subject:
+                'Administration',
+
+              email:
+                profile.email,
+
+              active:
+                true,
+
+              department:
+                'Administration'
+            });
+          }
+
+
+          setCurrentUser(
+            profile
+          );
+
+          setCurrentRole(
+            profile.role
+          );
+
           setIsLoading(false);
 
           return;
@@ -658,17 +729,23 @@ export const AuthProvider: React.FC<{
          * BRAND NEW USER
          * ========================================================
          *
-         * They are not in Teachers and not in Students.
+         * If their email isn't in Teachers or Students,
+         * default them to student.
          *
-         * Default them to student for safety.
+         * This is the safest fallback.
          */
 
         console.log(
-          '[AuthContext] New user. Defaulting to student.'
+          '[AuthContext] No teacher or student match found.'
+        );
+
+        console.log(
+          '[AuthContext] Creating new user as student.'
         );
 
 
-        profile = {
+        const newProfile:
+          UserProfile = {
 
           uid:
             user.uid,
@@ -691,7 +768,7 @@ export const AuthProvider: React.FC<{
 
 
         await saveUserProfile(
-          profile
+          newProfile
         );
 
 
@@ -701,7 +778,7 @@ export const AuthProvider: React.FC<{
 
 
         setCurrentUser(
-          profile
+          newProfile
         );
 
         setCurrentRole(
@@ -718,7 +795,7 @@ export const AuthProvider: React.FC<{
 
     /*
      * ============================================================
-     * AUTH LISTENER
+     * FIREBASE AUTH LISTENER
      * ============================================================
      */
 
@@ -773,12 +850,12 @@ export const AuthProvider: React.FC<{
 
             /*
              * ----------------------------------------------------
-             * AUTHENTICATED
+             * LOGGED IN
              * ----------------------------------------------------
              */
 
             console.log(
-              '[AuthContext] Firebase authentication successful:',
+              '[AuthContext] Firebase user authenticated:',
               user.email
             );
 
@@ -788,20 +865,8 @@ export const AuthProvider: React.FC<{
 
             /*
              * ----------------------------------------------------
-             * LOAD STUDENTS
+             * STUDENTS SUBSCRIPTION
              * ----------------------------------------------------
-             */
-
-            let loadedStudents:
-              Student[] = [];
-
-
-            let loadedTeachers:
-              Teacher[] = [];
-
-
-            /*
-             * Students subscription
              */
 
             unsubStudents =
@@ -839,19 +904,22 @@ export const AuthProvider: React.FC<{
                     );
 
 
+                  studentsLoaded =
+                    true;
+
+
                   setStudents(
                     loadedStudents
                   );
 
 
                   /*
-                   * If teachers have already loaded,
-                   * process the authenticated user.
+                   * Wait until BOTH collections are loaded.
                    */
 
                   if (
-                    loadedTeachers.length > 0 ||
-                    teacherListHasLoaded
+                    studentsLoaded &&
+                    teachersLoaded
                   ) {
 
                     processAuthenticatedUser(
@@ -865,12 +933,10 @@ export const AuthProvider: React.FC<{
 
 
             /*
-             * Teachers subscription
+             * ----------------------------------------------------
+             * TEACHERS SUBSCRIPTION
+             * ----------------------------------------------------
              */
-
-            let teacherListHasLoaded =
-              false;
-
 
             unsubTeachers =
               subscribeToTeachers(
@@ -891,7 +957,7 @@ export const AuthProvider: React.FC<{
                     );
 
 
-                  teacherListHasLoaded =
+                  teachersLoaded =
                     true;
 
 
@@ -901,23 +967,28 @@ export const AuthProvider: React.FC<{
 
 
                   /*
-                   * Process user AFTER teacher data is loaded.
-                   *
-                   * This is important because Firebase data may
-                   * arrive after Google authentication.
+                   * Wait until BOTH collections are loaded.
                    */
 
-                  processAuthenticatedUser(
-                    user,
-                    loadedStudents,
-                    loadedTeachers
-                  );
+                  if (
+                    studentsLoaded &&
+                    teachersLoaded
+                  ) {
+
+                    processAuthenticatedUser(
+                      user,
+                      loadedStudents,
+                      loadedTeachers
+                    );
+                  }
                 }
               );
 
 
             /*
-             * USERS COLLECTION
+             * ----------------------------------------------------
+             * USERS SUBSCRIPTION
+             * ----------------------------------------------------
              */
 
             unsubUsers =
@@ -970,7 +1041,9 @@ export const AuthProvider: React.FC<{
 
     return () => {
 
-      isMounted = false;
+      isMounted =
+        false;
+
 
       unsubAuth();
 
@@ -1232,6 +1305,12 @@ export const AuthProvider: React.FC<{
       );
 
 
+      /*
+       * --------------------------------------------------------
+       * ADMIN
+       * --------------------------------------------------------
+       */
+
       if (
         role === 'admin'
       ) {
@@ -1242,89 +1321,83 @@ export const AuthProvider: React.FC<{
       }
 
 
+      /*
+       * --------------------------------------------------------
+       * TEACHER
+       * --------------------------------------------------------
+       */
+
       if (
         role === 'teacher'
       ) {
 
+        /*
+         * Find the logged-in teacher by email.
+         *
+         * Do NOT use teachers[0].
+         */
+
+        const matchingTeacher =
+          teachers.find(
+            (teacher) =>
+              teacher.email &&
+              firebaseUser?.email &&
+              teacher.email
+                .trim()
+                .toLowerCase() ===
+              firebaseUser.email
+                .trim()
+                .toLowerCase()
+          );
+
+
         if (
-          activeTeacher
+          matchingTeacher
         ) {
 
           setActiveTeacher(
-            activeTeacher
-          );
-
-        } else {
-
-          /*
-           * IMPORTANT:
-           *
-           * Do NOT randomly assign the first teacher anymore.
-           *
-           * A teacher must be matched to their own email.
-           */
-
-          const matchingTeacher =
-            teachers.find(
-              (teacher) =>
-                teacher.email &&
-                firebaseUser?.email &&
-                teacher.email
-                  .toLowerCase() ===
-                firebaseUser.email
-                  .toLowerCase()
-            );
-
-
-          if (
             matchingTeacher
-          ) {
-
-            setActiveTeacher(
-              matchingTeacher
-            );
-          }
+          );
         }
+
 
         return;
       }
 
 
+      /*
+       * --------------------------------------------------------
+       * STUDENT
+       * --------------------------------------------------------
+       */
+
       if (
         role === 'student'
       ) {
 
+        const matchingStudent =
+          students.find(
+            (student) =>
+              student.email &&
+              firebaseUser?.email &&
+              student.email
+                .trim()
+                .toLowerCase() ===
+              firebaseUser.email
+                .trim()
+                .toLowerCase()
+          );
+
+
         if (
-          activeStudent
+          matchingStudent
         ) {
 
           setActiveStudent(
-            activeStudent
-          );
-
-        } else {
-
-          const matchingStudent =
-            students.find(
-              (student) =>
-                student.email &&
-                firebaseUser?.email &&
-                student.email
-                  .toLowerCase() ===
-                firebaseUser.email
-                  .toLowerCase()
-            );
-
-
-          if (
             matchingStudent
-          ) {
-
-            setActiveStudent(
-              matchingStudent
-            );
-          }
+          );
         }
+
 
         return;
       }
@@ -1395,7 +1468,7 @@ export const AuthProvider: React.FC<{
    * ============================================================
    * PROVIDER
    * ============================================================
- */
+   */
 
   return (
 
