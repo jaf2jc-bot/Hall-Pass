@@ -209,73 +209,76 @@ useEffect(() => {
   return (
     <div className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 ${isFullscreen ? 'fixed inset-0 z-50 bg-slate-950 p-6 overflow-y-auto' : ''}`}>
 
-       {/* ========================================================
-          STUDENT CONFLICT ALERTS
-         ======================================================== */}
-      {conflictAlerts.length > 0 && (
-        <div className="space-y-3">
-          {conflictAlerts.map((alert) => (
-            <div
-              key={`${alert.student1.studentId}-${alert.student2.studentId}`}
-              className="bg-rose-50 border-2 border-rose-500 rounded-2xl p-4 sm:p-5 shadow-lg animate-pulse"
-            >
-              <div className="flex items-start gap-3">
-                <div className="shrink-0 w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center">
-                  <AlertTriangle className="w-6 h-6" />
-                </div>
+{/* ========================================================
+    STUDENT CONFLICT ALERTS
+   ======================================================== */}
+{conflictAlerts.length > 0 && (
+  <div className="space-y-2">
+    {conflictAlerts.map((alert) => (
+      <div
+        key={`${alert.student1.studentId}-${alert.student2.studentId}`}
+        className="bg-rose-50 border border-rose-500 rounded-lg px-3 py-2 shadow-sm animate-pulse"
+      >
+        <div className="flex items-center gap-2">
 
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-lg font-black text-rose-900">
-                      HALLWAY CONFLICT ALERT
-                    </h3>
-                  </div>
+          <div className="shrink-0 w-7 h-7 rounded-lg bg-rose-600 text-white flex items-center justify-center">
+            <AlertTriangle className="w-4 h-4" />
+          </div>
 
-                  <p className="text-sm font-semibold text-rose-800 mt-1">
-                    These students are currently in the hallway at the same time:
-                  </p>
+          <div className="flex-1 min-w-0">
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
-                    <div className="bg-white rounded-xl border border-rose-200 p-3">
-                      <div className="font-bold text-slate-900">
-                        {alert.student1.studentName}
-                      </div>
-                      <div className="text-xs text-slate-500 mt-1">
-                        {alert.student1.destination}
-                        {alert.student1.destinationDetails
-                          ? ` • ${alert.student1.destinationDetails}`
-                          : ''}
-                      </div>
-                      <div className="text-xs text-slate-400 mt-1">
-                        Out since {formatTimeAmPm(alert.student1.timeOut)}
-                      </div>
-                    </div>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
 
-                    <div className="bg-white rounded-xl border border-rose-200 p-3">
-                      <div className="font-bold text-slate-900">
-                        {alert.student2.studentName}
-                      </div>
-                      <div className="text-xs text-slate-500 mt-1">
-                        {alert.student2.destination}
-                        {alert.student2.destinationDetails
-                          ? ` • ${alert.student2.destinationDetails}`
-                          : ''}
-                      </div>
-                      <div className="text-xs text-slate-400 mt-1">
-                        Out since {formatTimeAmPm(alert.student2.timeOut)}
-                      </div>
-                    </div>
-                  </div>
-                </div>
+              <span className="font-black text-rose-900">
+                HALLWAY CONFLICT
+              </span>
 
-                <div className="shrink-0 text-rose-600">
-                  <AlertTriangle className="w-5 h-5" />
-                </div>
-              </div>
+              <span className="text-rose-700">
+                —
+              </span>
+
+              <span className="font-bold text-slate-900">
+                {alert.student1.studentName}
+              </span>
+
+              <span className="text-rose-700">
+                and
+              </span>
+
+              <span className="font-bold text-slate-900">
+                {alert.student2.studentName}
+              </span>
+
+              <span className="text-rose-700">
+                are currently in the hallway at the same time.
+              </span>
+
             </div>
-          ))}
+
+            <div className="text-xs text-rose-700 mt-0.5">
+              {alert.student1.destination}
+              {alert.student1.destinationDetails
+                ? ` • ${alert.student1.destinationDetails}`
+                : ''}
+              {' '}({formatTimeAmPm(alert.student1.timeOut)})
+              {' '}•{' '}
+              {alert.student2.destination}
+              {alert.student2.destinationDetails
+                ? ` • ${alert.student2.destinationDetails}`
+                : ''}
+              {' '}({formatTimeAmPm(alert.student2.timeOut)})
+            </div>
+
+          </div>
+
+          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+
         </div>
-      )}
+      </div>
+    ))}
+  </div>
+)}
+
       
       {/* Top Banner & Quick Controls */}
       <div className="bg-gradient-to-r from-purple-950 via-purple-900 to-indigo-950 rounded-2xl p-5 sm:p-6 text-white shadow-xl border-2 border-amber-400/40 flex flex-col md:flex-row md:items-center justify-between gap-4">
