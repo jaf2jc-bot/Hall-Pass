@@ -20,7 +20,6 @@ import {
   HelpCircle,
   Flag,
   UserX,
-  Plus,
   X
 } from 'lucide-react';
 import {
@@ -40,14 +39,12 @@ interface CurrentlyOutDashboardProps {
   activePasses: HallPass[];
   teachers: Teacher[];
   soundEnabled: boolean;
-  onRequestPassModal: () => void;
 }
 
 export const CurrentlyOutDashboard: React.FC<CurrentlyOutDashboardProps> = ({
   activePasses,
   teachers,
-  soundEnabled,
-  onRequestPassModal
+  soundEnabled
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDestination, setFilterDestination] = useState<string>('ALL');
@@ -302,15 +299,7 @@ useEffect(() => {
 
         {/* Action buttons */}
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-          <button
-            id="btn-quick-create-pass"
-            type="button"
-            onClick={onRequestPassModal}
-            className="px-4 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-purple-950 font-black text-xs sm:text-sm rounded-xl shadow-lg flex items-center gap-2 transition transform active:scale-95"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Issue Pass</span>
-          </button>
+          
 
           <button
             id="btn-toggle-fullscreen"
