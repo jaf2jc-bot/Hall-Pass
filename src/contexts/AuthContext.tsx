@@ -2,15 +2,14 @@ import React, {
   createContext,
   useContext,
   useState,
-  useEffect,
-  useRef,
+  useEffect
 } from 'react';
 
 import {
   UserProfile,
   UserRole,
   Student,
-  Teacher,
+  Teacher
 } from '../types';
 
 import {
@@ -22,50 +21,39 @@ import {
   subscribeToStudents,
   subscribeToTeachers,
   seedInitialJMMSData,
-  ALLOWED_DOMAIN,
+  ALLOWED_DOMAIN
 } from '../lib/firebase';
 
 import {
   onAuthStateChanged,
-  User,
+  User
 } from 'firebase/auth';
 
 
-// ============================================================
-// AUTH CONTEXT TYPE
-// ============================================================
-
 interface AuthContextType {
   firebaseUser: User | null;
-
   currentUser: UserProfile | null;
-
   currentRole: UserRole | null;
 
   setRole: (role: UserRole) => void;
 
   students: Student[];
-
   teachers: Teacher[];
 
   isLoading: boolean;
 
   activeStudent: Student | null;
-
   activeTeacher: Teacher | null;
 
   authError: string | null;
-
   setAuthError: (err: string | null) => void;
 
   loginWithGoogle: () => Promise<boolean>;
 
   selectStudent: (student: Student) => void;
-
   selectTeacher: (teacher: Teacher) => void;
 
   loginAsAdmin: () => void;
-
   loginAsStudentById: (studentId: string) => boolean;
 
   logout: () => Promise<void>;
@@ -74,27 +62,15 @@ interface AuthContextType {
 }
 
 
-// ============================================================
-// CONTEXT
-// ============================================================
-
 const AuthContext =
   createContext<AuthContextType | undefined>(
     undefined
   );
 
 
-// ============================================================
-// AUTH PROVIDER
-// ============================================================
-
 export const AuthProvider: React.FC<{
   children: React.ReactNode;
 }> = ({ children }) => {
-
-  // ==========================================================
-  // STATE
-  // ==========================================================
 
   const [firebaseUser, setFirebaseUser] =
     useState<User | null>(null);
@@ -124,1196 +100,634 @@ export const AuthProvider: React.FC<{
     useState<string | null>(null);
 
 
-  // ==========================================================
-  // IMPORTANT:
-  // KEEP CURRENT ROSTERS IN REFS
-  //
-  // This prevents the authentication callback from using the
-  // OLD empty arrays captured when the component first mounted.
-  // ==========================================================
-
-  const studentsRef =
-    useRef<Student[]>([]);
-
-  const teachersRef =
-    useRef<Teacher[]>([]);
-
-
-  // ==========================================================
-  // KEEP TRACK OF ROSTER SUBSCRIPTIONS
-  // ==========================================================
-
-  const unsubStudentsRef =
-    useRef<(() => void) | null>(null);
-
-  const unsubTeachersRef =
-    useRef<(() => void) | null>(null);
-
-
-  // ==========================================================
-  // KEEP TRACK OF WHETHER WE ARE STILL MOUNTED
-  // ==========================================================
-
-  const mountedRef =
-    useRef(true);
-
-
-  // ==========================================================
-  // CLEAN UP ON UNMOUNT
-  // ==========================================================
+  /*
+   * ============================================================
+   * FIREBASE AUTHENTICATION
+   * ============================================================
+   *
+   * IMPORTANT:
+   *
+   * We DO NOT subscribe to students or teachers until
+   * Firebase confirms that the user is authenticated.
+   *
+   * This prevents:
+   *
+   * "You must be signed in to access JMMS data."
+   *
+   * ============================================================
+   */
 
   useEffect(() => {
 
-    mountedRef.current = true;
+    let unsubStudents:
+      (() => void) | undefined;
 
-    return () => {
+    let unsubTeachers:
+      (() => void) | undefined;
 
-      mountedRef.current = false;
 
-      if (unsubStudentsRef.current) {
-        unsubStudentsRef.current();
-        unsubStudentsRef.current = null;
-      }
+    /*
+     * ------------------------------------------------------------
+     * LOAD SCHOOL ROSTERS
+     * ------------------------------------------------------------
+     */
 
-      if (unsubTeachersRef.current) {
-        unsubTeachersRef.current();
-        unsubTeachersRef.current = null;
-      }
-    };
-
-  }, []);
-
-
-  // ============================================================
-  // PROCESS AUTHENTICATED USER
-  // ============================================================
-
-  const processAuthenticatedUser =
-    async (
-      user: User
-    ): Promise<void> => {
-
-      if (!mountedRef.current) {
-        return;
-      }
-
-
-      console.log(
-        '[AuthContext] Processing authenticated user:',
-        user.email
-      );
-
-
-      setFirebaseUser(user);
-
-      setAuthError(null);
-
-
-      // ========================================================
-      // EMAIL
-      // ========================================================
-
-      const email =
-        user.email || '';
-
-      const emailLower =
-        email.toLowerCase();
-
-      const emailDomain =
-        email.split('@')[1]?.toLowerCase() || '';
-
-
-      // ========================================================
-      // ADMIN ACCOUNT
-      // ========================================================
-
-      const isAdminAccount =
-        emailLower ===
-          'jaf2jc@bearworks.jackson.sparcc.org' ||
-
-        emailLower.includes('admin') ||
-
-        emailLower.startsWith('principal');
-
-
-      // ========================================================
-      // DOMAIN CHECK
-      //
-      // Admin account is explicitly allowed even if domain
-      // settings change.
-      // ========================================================
-
-      const isAuthorizedDomain =
-        emailDomain ===
-          ALLOWED_DOMAIN.toLowerCase() ||
-
-        emailLower ===
-          'jaf2jc@bearworks.jackson.sparcc.org';
-
-
-      if (
-        !isAuthorizedDomain &&
-        !isAdminAccount
-      ) {
-
-        const errorMessage =
-          `Access restricted: Please sign in with your Jackson Memorial Middle School account (@${ALLOWED_DOMAIN}).`;
-
-        console.error(
-          '[AuthContext]',
-          errorMessage
-        );
-
-        setAuthError(
-          errorMessage
-        );
-
-        try {
-          await signOutFromApp();
-        } catch (error) {
-          console.error(
-            '[AuthContext] Error signing out unauthorized user:',
-            error
-          );
-        }
-
-        return;
-      }
-
-
-      // ========================================================
-      // ADMIN
-      //
-      // Admin does not need to wait for the teacher/student
-      // roster to determine their role.
-      // ========================================================
-
-      if (isAdminAccount) {
-
-        const adminProfile: UserProfile = {
-
-          uid:
-            user.uid,
-
-          email:
-            user.email || '',
-
-          displayName:
-            user.displayName ||
-            user.email?.split('@')[0] ||
-            'JMMS Administrator',
-
-          photoURL:
-            user.photoURL ||
-            undefined,
-
-          role:
-            'admin',
-
-          room:
-            'Main Administrative Office',
-        };
-
-
-        try {
-
-          await saveUserProfile(
-            adminProfile
-          );
-
-        } catch (error) {
-
-          console.error(
-            '[AuthContext] Could not save admin profile:',
-            error
-          );
-        }
-
-
-        if (!mountedRef.current) {
-          return;
-        }
-
-
-        setCurrentUser(
-          adminProfile
-        );
-
-        setCurrentRole(
-          'admin'
-        );
-
-
-        setActiveStudent(
-          null
-        );
-
-
-        setActiveTeacher({
-
-          id:
-            adminProfile.uid,
-
-          name:
-            adminProfile.displayName,
-
-          room:
-            adminProfile.room ||
-            'Main Administrative Office',
-
-          subject:
-            'Administration',
-
-          email:
-            adminProfile.email,
-
-          active:
-            true,
-
-          department:
-            'Administration',
-        });
-
-
-        setIsLoading(false);
-
-        return;
-      }
-
-
-      // ========================================================
-      // GET EXISTING PROFILE
-      // ========================================================
-
-      let profile =
-        await getUserProfile(
-          user.uid
-        );
-
-
-      // ========================================================
-      // CURRENT ROSTERS
-      //
-      // ALWAYS READ FROM REFS, NOT FROM THE STATE VARIABLES.
-      // ========================================================
-
-      const currentStudents =
-        studentsRef.current;
-
-      const currentTeachers =
-        teachersRef.current;
-
-
-      console.log(
-        '[AuthContext] Current student roster:',
-        currentStudents.length
-      );
-
-      console.log(
-        '[AuthContext] Current teacher roster:',
-        currentTeachers.length
-      );
-
-
-      // ========================================================
-      // FIND MATCHING TEACHER
-      // ========================================================
-
-      const matchingTeacher =
-        currentTeachers.find(
-          (teacher) =>
-            !!teacher.email &&
-            teacher.email
-              .toLowerCase()
-              .trim() ===
-            emailLower.trim()
-        );
-
-
-      // ========================================================
-      // FIND MATCHING STUDENT
-      // ========================================================
-
-      const matchingStudent =
-        currentStudents.find(
-          (student) =>
-            !!student.email &&
-            student.email
-              .toLowerCase()
-              .trim() ===
-            emailLower.trim()
-        );
-
-
-      // ========================================================
-      // EXISTING PROFILE
-      //
-      // If the roster identifies this person differently from
-      // an old profile, update the profile automatically.
-      // ========================================================
-
-      if (profile) {
-
-        let profileChanged =
-          false;
-
-
-        // ------------------------------------------------------
-        // Teacher roster match
-        // ------------------------------------------------------
-
-        if (matchingTeacher) {
-
-          if (
-            profile.role !==
-            'teacher'
-          ) {
-
-            profile = {
-              ...profile,
-              role: 'teacher',
-            };
-
-            profileChanged = true;
-          }
-
-
-          if (
-            profile.teacherDocId !==
-            matchingTeacher.id
-          ) {
-
-            profile = {
-              ...profile,
-              teacherDocId:
-                matchingTeacher.id,
-            };
-
-            profileChanged = true;
-          }
-
-
-          if (
-            profile.room !==
-            matchingTeacher.room
-          ) {
-
-            profile = {
-              ...profile,
-              room:
-                matchingTeacher.room,
-            };
-
-            profileChanged = true;
-          }
-        }
-
-
-        // ------------------------------------------------------
-        // Student roster match
-        // ------------------------------------------------------
-
-        if (matchingStudent) {
-
-          if (
-            profile.role !==
-            'student'
-          ) {
-
-            profile = {
-              ...profile,
-              role: 'student',
-            };
-
-            profileChanged = true;
-          }
-
-
-          if (
-            profile.studentId !==
-            matchingStudent.studentId
-          ) {
-
-            profile = {
-              ...profile,
-              studentId:
-                matchingStudent.studentId,
-            };
-
-            profileChanged = true;
-          }
-
-
-          if (
-            profile.studentDocId !==
-            matchingStudent.id
-          ) {
-
-            profile = {
-              ...profile,
-              studentDocId:
-                matchingStudent.id,
-            };
-
-            profileChanged = true;
-          }
-
-
-          if (
-            profile.grade !==
-            matchingStudent.grade
-          ) {
-
-            profile = {
-              ...profile,
-              grade:
-                matchingStudent.grade,
-            };
-
-            profileChanged = true;
-          }
-
-
-          if (
-            profile.room !==
-            matchingStudent.homeroom
-          ) {
-
-            profile = {
-              ...profile,
-              room:
-                matchingStudent.homeroom,
-            };
-
-            profileChanged = true;
-          }
-        }
-
-
-        // ------------------------------------------------------
-        // Save changes
-        // ------------------------------------------------------
-
-        if (profileChanged) {
-
-          try {
-
-            await saveUserProfile(
-              profile
-            );
-
-          } catch (error) {
-
-            console.error(
-              '[AuthContext] Could not update user profile:',
-              error
-            );
-          }
-        }
-      }
-
-
-      // ========================================================
-      // NEW USER
-      //
-      // This is where automatic teacher authorization happens.
-      // ========================================================
-
-      else {
-
-        let role:
-          UserRole = 'student';
-
-
-        let studentId:
-          string | undefined;
-
-
-        let studentDocId:
-          string | undefined;
-
-
-        let teacherDocId:
-          string | undefined;
-
-
-        let room:
-          string | undefined;
-
-
-        let grade:
-          number | undefined;
-
-
-        // ------------------------------------------------------
-        // TEACHER MATCH
-        // ------------------------------------------------------
-
-        if (matchingTeacher) {
-
-          console.log(
-            '[AuthContext] Teacher matched by email:',
-            matchingTeacher.name
-          );
-
-
-          role =
-            'teacher';
-
-
-          teacherDocId =
-            matchingTeacher.id;
-
-
-          room =
-            matchingTeacher.room;
-        }
-
-
-        // ------------------------------------------------------
-        // STUDENT MATCH
-        //
-        // Student takes priority if an email somehow appears
-        // in both rosters.
-        // ------------------------------------------------------
-
-        if (matchingStudent) {
-
-          console.log(
-            '[AuthContext] Student matched by email:',
-            `${matchingStudent.firstName} ${matchingStudent.lastName}`
-          );
-
-
-          role =
-            'student';
-
-
-          studentId =
-            matchingStudent.studentId;
-
-
-          studentDocId =
-            matchingStudent.id;
-
-
-          grade =
-            matchingStudent.grade;
-
-
-          room =
-            matchingStudent.homeroom;
-        }
-
-
-        // ------------------------------------------------------
-        // CREATE PROFILE
-        // ------------------------------------------------------
-
-        profile = {
-
-          uid:
-            user.uid,
-
-          email:
-            user.email || '',
-
-          displayName:
-            user.displayName ||
-            user.email?.split('@')[0] ||
-            'JMMS User',
-
-          photoURL:
-            user.photoURL ||
-            undefined,
-
-          role,
-
-          ...(studentId
-            ? {
-                studentId,
-              }
-            : {}),
-
-          ...(studentDocId
-            ? {
-                studentDocId,
-              }
-            : {}),
-
-          ...(teacherDocId
-            ? {
-                teacherDocId,
-              }
-            : {}),
-
-          ...(grade !== undefined
-            ? {
-                grade,
-              }
-            : {}),
-
-          ...(room
-            ? {
-                room,
-              }
-            : {}),
-        };
-
-
-        console.log(
-          '[AuthContext] Creating new profile:',
-          {
-            email:
-              profile.email,
-
-            role:
-              profile.role,
-
-            studentId:
-              profile.studentId,
-
-            teacherDocId:
-              profile.teacherDocId,
-          }
-        );
-
-
-        try {
-
-          await saveUserProfile(
-            profile
-          );
-
-        } catch (error) {
-
-          console.error(
-            '[AuthContext] Could not save new profile:',
-            error
-          );
-        }
-      }
-
-
-      // ========================================================
-      // SET CURRENT USER
-      // ========================================================
-
-      if (!mountedRef.current) {
-        return;
-      }
-
-
-      setCurrentUser(
-        profile
-      );
-
-
-      setCurrentRole(
-        profile.role
-      );
-
-
-      // ========================================================
-      // ACTIVE STUDENT
-      // ========================================================
-
-      if (
-        profile.role ===
-        'student'
-      ) {
-
-        let matchedStudent:
-          Student | undefined;
-
-
-        // ------------------------------------------------------
-        // Match by student ID
-        // ------------------------------------------------------
-
-        if (
-          profile.studentId
-        ) {
-
-          matchedStudent =
-            studentsRef.current.find(
-              (student) =>
-                student.studentId ===
-                profile.studentId
-            );
-        }
-
-
-        // ------------------------------------------------------
-        // Match by document ID
-        // ------------------------------------------------------
-
-        if (
-          !matchedStudent &&
-          profile.studentDocId
-        ) {
-
-          matchedStudent =
-            studentsRef.current.find(
-              (student) =>
-                student.id ===
-                profile.studentDocId
-            );
-        }
-
-
-        // ------------------------------------------------------
-        // Match by email
-        // ------------------------------------------------------
-
-        if (
-          !matchedStudent
-        ) {
-
-          matchedStudent =
-            studentsRef.current.find(
-              (student) =>
-                student.email &&
-                profile.email &&
-                student.email
-                  .toLowerCase()
-                  .trim() ===
-                profile.email
-                  .toLowerCase()
-                  .trim()
-            );
-        }
-
-
-        if (matchedStudent) {
-
-          console.log(
-            '[AuthContext] Active student:',
-            matchedStudent.firstName,
-            matchedStudent.lastName
-          );
-
-
-          setActiveStudent(
-            matchedStudent
-          );
-
-        } else {
-
-          console.warn(
-            '[AuthContext] Student profile exists but no roster match was found.'
-          );
-
-
-          setActiveStudent(
-            null
-          );
-        }
-
-
-        setActiveTeacher(
-          null
-        );
-      }
-
-
-      // ========================================================
-      // ACTIVE TEACHER
-      // ========================================================
-
-      if (
-        profile.role ===
-        'teacher'
-      ) {
-
-        let matchedTeacher:
-          Teacher | undefined;
-
-
-        // ------------------------------------------------------
-        // Match by teacher document ID
-        // ------------------------------------------------------
-
-        if (
-          profile.teacherDocId
-        ) {
-
-          matchedTeacher =
-            teachersRef.current.find(
-              (teacher) =>
-                teacher.id ===
-                profile.teacherDocId
-            );
-        }
-
-
-        // ------------------------------------------------------
-        // Match by email
-        // ------------------------------------------------------
-
-        if (
-          !matchedTeacher
-        ) {
-
-          matchedTeacher =
-            teachersRef.current.find(
-              (teacher) =>
-                teacher.email &&
-                profile.email &&
-                teacher.email
-                  .toLowerCase()
-                  .trim() ===
-                profile.email
-                  .toLowerCase()
-                  .trim()
-            );
-        }
-
-
-        if (matchedTeacher) {
-
-          console.log(
-            '[AuthContext] Active teacher:',
-            matchedTeacher.name
-          );
-
-
-          setActiveTeacher(
-            matchedTeacher
-          );
-
-        } else {
-
-          console.warn(
-            '[AuthContext] Teacher profile exists but no roster match was found.'
-          );
-
-
-          setActiveTeacher(
-            null
-          );
-        }
-
-
-        setActiveStudent(
-          null
-        );
-      }
-
-
-      // ========================================================
-      // FINISHED
-      // ========================================================
-
-      setIsLoading(
-        false
-      );
-    };
-
-
-  // ============================================================
-  // START ROSTER LISTENERS
-  //
-  // CRITICAL:
-  // These are NOT started until Firebase says the user is
-  // authenticated.
-  // ============================================================
-
-  const startRosterSubscriptions =
-    () => {
-
-      // --------------------------------------------------------
-      // Prevent duplicate listeners
-      // --------------------------------------------------------
-
-      if (
-        unsubStudentsRef.current ||
-        unsubTeachersRef.current
-      ) {
-
-        return;
-      }
-
+    const startRosterSubscriptions = () => {
 
       console.log(
         '[AuthContext] Starting authenticated roster subscriptions.'
       );
 
 
-      // ========================================================
-      // STUDENTS
-      // ========================================================
+      /*
+       * STUDENTS
+       */
 
-      unsubStudentsRef.current =
+      unsubStudents =
         subscribeToStudents(
           (studentList) => {
-
-            if (!mountedRef.current) {
-              return;
-            }
-
 
             console.log(
               '[AuthContext] Students loaded:',
               studentList.length
             );
 
-
-            studentsRef.current =
-              studentList;
-
-
             setStudents(
-              studentList
+              [...studentList].sort(
+                (a, b) => {
+
+                  const lastNameCompare =
+                    a.lastName.localeCompare(
+                      b.lastName
+                    );
+
+                  if (
+                    lastNameCompare !== 0
+                  ) {
+                    return lastNameCompare;
+                  }
+
+                  return a.firstName.localeCompare(
+                    b.firstName
+                  );
+                }
+              )
             );
           }
         );
 
 
-      // ========================================================
-      // TEACHERS
-      // ========================================================
+      /*
+       * TEACHERS
+       */
 
-      unsubTeachersRef.current =
+      unsubTeachers =
         subscribeToTeachers(
           (teacherList) => {
-
-            if (!mountedRef.current) {
-              return;
-            }
-
 
             console.log(
               '[AuthContext] Teachers loaded:',
               teacherList.length
             );
 
-
-            teachersRef.current =
-              teacherList;
-
-
             setTeachers(
-              teacherList
+              [...teacherList].sort(
+                (a, b) =>
+                  a.name.localeCompare(
+                    b.name
+                  )
+              )
             );
           }
         );
     };
 
 
-  // ============================================================
-  // FIREBASE AUTH LISTENER
-  // ============================================================
+    /*
+     * ------------------------------------------------------------
+     * PROCESS AUTHENTICATED USER
+     * ------------------------------------------------------------
+     */
 
-  useEffect(() => {
+    const processAuthenticatedUser =
+      async (user: User | null) => {
 
-    console.log(
-      '[AuthContext] Starting Firebase auth listener.'
-    );
+        setFirebaseUser(user);
 
 
-    const unsubscribeAuth =
+        /*
+         * --------------------------------------------------------
+         * NO USER
+         * --------------------------------------------------------
+         */
+
+        if (!user || user.isAnonymous) {
+
+          console.log(
+            '[AuthContext] No authenticated user.'
+          );
+
+          setCurrentUser(null);
+          setCurrentRole(null);
+
+          setActiveStudent(null);
+          setActiveTeacher(null);
+
+          setStudents([]);
+          setTeachers([]);
+
+          setIsLoading(false);
+
+          return;
+        }
+
+
+        /*
+         * --------------------------------------------------------
+         * USER IS AUTHENTICATED
+         * --------------------------------------------------------
+         */
+
+        console.log(
+          '[AuthContext] Firebase user authenticated:',
+          user.email
+        );
+
+
+        /*
+         * IMPORTANT:
+         *
+         * Start roster listeners HERE, after Firebase
+         * authentication has completed.
+         */
+
+        startRosterSubscriptions();
+
+
+        /*
+         * --------------------------------------------------------
+         * CHECK SCHOOL EMAIL DOMAIN
+         * --------------------------------------------------------
+         */
+
+        const email =
+          user.email || '';
+
+        const emailLower =
+          email.toLowerCase();
+
+        const emailDomain =
+          email.split('@')[1]?.toLowerCase();
+
+
+        const isAuthorizedDomain =
+          emailDomain ===
+            ALLOWED_DOMAIN.toLowerCase() ||
+          emailLower ===
+            'jaf2jc@bearworks.jackson.sparcc.org';
+
+
+        if (
+          !isAuthorizedDomain &&
+          emailDomain
+        ) {
+
+          setAuthError(
+            `Access restricted: Please sign in with your Jackson Memorial Middle School account (@${ALLOWED_DOMAIN}).`
+          );
+
+          await signOutFromApp();
+
+          setIsLoading(false);
+
+          return;
+        }
+
+
+        setAuthError(null);
+
+
+        /*
+         * --------------------------------------------------------
+         * GET EXISTING USER PROFILE
+         * --------------------------------------------------------
+         */
+
+        let profile =
+          await getUserProfile(
+            user.uid
+          );
+
+
+        /*
+         * ========================================================
+         * ADMIN ACCOUNT
+         * ========================================================
+         */
+
+        const isAdminAccount =
+          emailLower ===
+            'jaf2jc@bearworks.jackson.sparcc.org' ||
+          emailLower.includes('admin') ||
+          emailLower.startsWith('principal');
+
+
+        if (isAdminAccount) {
+
+          profile = {
+
+            uid:
+              user.uid,
+
+            email:
+              user.email || '',
+
+            displayName:
+              user.displayName ||
+              user.email?.split('@')[0] ||
+              'JMMS Administrator',
+
+            photoURL:
+              user.photoURL ||
+              undefined,
+
+            role:
+              'admin',
+
+            room:
+              'Main Administrative Office'
+          };
+
+
+          await saveUserProfile(
+            profile
+          );
+        }
+
+
+        /*
+         * ========================================================
+         * EXISTING / NEW USER
+         * ========================================================
+         */
+
+        else if (!profile) {
+
+          /*
+           * Default role.
+           */
+
+          let role:
+            UserRole = 'student';
+
+
+          let studentId:
+            string | undefined;
+
+          let studentDocId:
+            string | undefined;
+
+          let teacherDocId:
+            string | undefined;
+
+          let room:
+            string | undefined;
+
+          let grade:
+            number | undefined;
+
+
+          /*
+           * ------------------------------------------------------
+           * MATCH TEACHER
+           *
+           * IMPORTANT:
+           *
+           * The roster listener may not have returned yet.
+           *
+           * We therefore only use the roster if it is already
+           * loaded.
+           * ------------------------------------------------------
+           */
+
+          const matchingTeacher =
+            teachers.find(
+              (teacher) =>
+                teacher.email &&
+                teacher.email
+                  .toLowerCase() ===
+                  emailLower
+            );
+
+
+          if (matchingTeacher) {
+
+            role =
+              'teacher';
+
+            teacherDocId =
+              matchingTeacher.id;
+
+            room =
+              matchingTeacher.room;
+          }
+
+
+          /*
+           * ------------------------------------------------------
+           * MATCH STUDENT
+           * ------------------------------------------------------
+           */
+
+          const matchingStudent =
+            students.find(
+              (student) =>
+                student.email &&
+                student.email
+                  .toLowerCase() ===
+                  emailLower
+            );
+
+
+          if (matchingStudent) {
+
+            role =
+              'student';
+
+            studentId =
+              matchingStudent.studentId;
+
+            studentDocId =
+              matchingStudent.id;
+
+            grade =
+              matchingStudent.grade;
+
+            room =
+              matchingStudent.homeroom;
+          }
+
+
+          /*
+           * ------------------------------------------------------
+           * CREATE PROFILE
+           * ------------------------------------------------------
+           */
+
+          profile = {
+
+            uid:
+              user.uid,
+
+            email:
+              user.email || '',
+
+            displayName:
+              user.displayName ||
+              user.email?.split('@')[0] ||
+              'JMMS User',
+
+            photoURL:
+              user.photoURL ||
+              undefined,
+
+            role,
+
+            ...(studentId
+              ? { studentId }
+              : {}),
+
+            ...(studentDocId
+              ? { studentDocId }
+              : {}),
+
+            ...(teacherDocId
+              ? { teacherDocId }
+              : {}),
+
+            ...(grade !== undefined
+              ? { grade }
+              : {}),
+
+            ...(room
+              ? { room }
+              : {})
+          };
+
+
+          await saveUserProfile(
+            profile
+          );
+        }
+
+
+        /*
+         * ========================================================
+         * SET CURRENT USER
+         * ========================================================
+         */
+
+        if (!profile) {
+
+          throw new Error(
+            'Unable to create or load your JMMS user profile.'
+          );
+        }
+
+
+        setCurrentUser(
+          profile
+        );
+
+        setCurrentRole(
+          profile.role
+        );
+
+
+        /*
+         * ========================================================
+         * MATCH ACTIVE STUDENT
+         * ========================================================
+         */
+
+        if (
+          profile.role === 'student'
+        ) {
+
+          let matchedStudent:
+            Student | undefined;
+
+
+          /*
+           * First try student ID.
+           */
+
+          if (
+            profile.studentId
+          ) {
+
+            matchedStudent =
+              students.find(
+                (student) =>
+                  student.studentId ===
+                  profile.studentId
+              );
+          }
+
+
+          /*
+           * Then try email.
+           */
+
+          if (
+            !matchedStudent
+          ) {
+
+            matchedStudent =
+              students.find(
+                (student) =>
+                  student.email &&
+                  profile.email &&
+                  student.email
+                    .toLowerCase() ===
+                    profile.email
+                      .toLowerCase()
+              );
+          }
+
+
+          if (
+            matchedStudent
+          ) {
+
+            setActiveStudent(
+              matchedStudent
+            );
+          }
+        }
+
+
+        /*
+         * ========================================================
+         * MATCH ACTIVE TEACHER
+         * ========================================================
+         */
+
+        if (
+          profile.role === 'teacher'
+        ) {
+
+          let matchedTeacher:
+            Teacher | undefined;
+
+
+          /*
+           * First try teacher document ID.
+           */
+
+          if (
+            profile.teacherDocId
+          ) {
+
+            matchedTeacher =
+              teachers.find(
+                (teacher) =>
+                  teacher.id ===
+                  profile.teacherDocId
+              );
+          }
+
+
+          /*
+           * Then try email.
+           */
+
+          if (
+            !matchedTeacher
+          ) {
+
+            matchedTeacher =
+              teachers.find(
+                (teacher) =>
+                  teacher.email &&
+                  profile.email &&
+                  teacher.email
+                    .toLowerCase() ===
+                    profile.email
+                      .toLowerCase()
+              );
+          }
+
+
+          if (
+            matchedTeacher
+          ) {
+
+            setActiveTeacher(
+              matchedTeacher
+            );
+          }
+        }
+
+
+        /*
+         * ========================================================
+         * ADMIN ACTIVE PROFILE
+         * ========================================================
+         */
+
+        if (
+          profile.role === 'admin'
+        ) {
+
+          setActiveTeacher({
+
+            id:
+              profile.uid,
+
+            name:
+              profile.displayName,
+
+            room:
+              profile.room ||
+              'Main Administrative Office',
+
+            subject:
+              'Administration',
+
+            email:
+              profile.email,
+
+            active:
+              true,
+
+            department:
+              'Administration'
+          });
+        }
+
+
+        setIsLoading(false);
+      };
+
+
+    /*
+     * ============================================================
+     * FIREBASE AUTH LISTENER
+     * ============================================================
+     */
+
+    const unsubAuth =
       onAuthStateChanged(
         auth,
+
         async (user) => {
 
           try {
 
-            // ==================================================
-            // LOGGED OUT
-            // ==================================================
-
-            if (
-              !user ||
-              user.isAnonymous
-            ) {
-
-              console.log(
-                '[AuthContext] No authenticated user.'
-              );
-
-
-              setFirebaseUser(
-                null
-              );
-
-              setCurrentUser(
-                null
-              );
-
-              setCurrentRole(
-                null
-              );
-
-              setActiveStudent(
-                null
-              );
-
-              setActiveTeacher(
-                null
-              );
-
-              studentsRef.current =
-                [];
-
-              teachersRef.current =
-                [];
-
-              setStudents(
-                []
-              );
-
-              setTeachers(
-                []
-              );
-
-
-              setIsLoading(
-                false
-              );
-
-
-              return;
-            }
-
-
-            // ==================================================
-            // AUTHENTICATED
-            // ==================================================
-
-            console.log(
-              '[AuthContext] Firebase user authenticated:',
-              user.email
-            );
-
-
-            setFirebaseUser(
+            await processAuthenticatedUser(
               user
             );
-
-
-            setIsLoading(
-              true
-            );
-
-
-            // --------------------------------------------------
-            // IMPORTANT:
-            // Start Firestore roster listeners ONLY NOW.
-            // --------------------------------------------------
-
-            startRosterSubscriptions();
-
-
-            // --------------------------------------------------
-            // Give the Firestore listeners a chance to establish
-            // their initial snapshots before trying to match a
-            // brand-new teacher/student.
-            //
-            // Existing profiles are still processed immediately.
-            // --------------------------------------------------
-
-            let attempts = 0;
-
-            const waitForRoster =
-              async (): Promise<void> => {
-
-                // ------------------------------------------------
-                // Existing admin account does not need roster.
-                // ------------------------------------------------
-
-                const email =
-                  user.email?.toLowerCase() || '';
-
-
-                const isAdminAccount =
-                  email ===
-                    'jaf2jc@bearworks.jackson.sparcc.org' ||
-
-                  email.includes('admin') ||
-
-                  email.startsWith('principal');
-
-
-                if (isAdminAccount) {
-
-                  await processAuthenticatedUser(
-                    user
-                  );
-
-                  return;
-                }
-
-
-                // ------------------------------------------------
-                // Existing profile can be processed even while
-                // the roster is loading.
-                // ------------------------------------------------
-
-                const existingProfile =
-                  await getUserProfile(
-                    user.uid
-                  );
-
-
-                if (
-                  existingProfile ||
-                  studentsRef.current.length > 0 ||
-                  teachersRef.current.length > 0
-                ) {
-
-                  await processAuthenticatedUser(
-                    user
-                  );
-
-                  return;
-                }
-
-
-                // ------------------------------------------------
-                // Wait for initial roster snapshot.
-                //
-                // 20 attempts x 250ms = 5 seconds maximum.
-                // ------------------------------------------------
-
-                if (
-                  attempts < 20
-                ) {
-
-                  attempts++;
-
-                  await new Promise(
-                    (resolve) =>
-                      setTimeout(
-                        resolve,
-                        250
-                      )
-                  );
-
-
-                  await waitForRoster();
-
-                  return;
-                }
-
-
-                // ------------------------------------------------
-                // If the roster is genuinely empty, still allow
-                // the user to authenticate.
-                // ------------------------------------------------
-
-                console.warn(
-                  '[AuthContext] Roster did not load within 5 seconds. Continuing authentication.'
-                );
-
-
-                await processAuthenticatedUser(
-                  user
-                );
-              };
-
-
-            await waitForRoster();
 
           } catch (error) {
 
@@ -1322,60 +736,59 @@ export const AuthProvider: React.FC<{
               error
             );
 
+            setAuthError(
+              error instanceof Error
+                ? error.message
+                : 'There was a problem loading your account. Please try signing in again.'
+            );
 
-            if (
-              mountedRef.current
-            ) {
-
-              setAuthError(
-                error instanceof Error
-                  ? error.message
-                  : 'There was a problem loading your account. Please try signing in again.'
-              );
-
-
-              setIsLoading(
-                false
-              );
-            }
+            setIsLoading(false);
           }
         }
       );
 
 
+    /*
+     * ============================================================
+     * CLEANUP
+     * ============================================================
+     */
+
     return () => {
 
-      unsubscribeAuth();
+      unsubAuth();
 
+      if (
+        unsubStudents
+      ) {
+        unsubStudents();
+      }
+
+      if (
+        unsubTeachers
+      ) {
+        unsubTeachers();
+      }
     };
 
   }, []);
 
 
-  // ============================================================
-  // GOOGLE LOGIN
-  // ============================================================
+  /*
+   * ============================================================
+   * GOOGLE LOGIN
+   * ============================================================
+   */
 
   const loginWithGoogle =
     async (): Promise<boolean> => {
 
       try {
 
-        setIsLoading(
-          true
-        );
-
-        setAuthError(
-          null
-        );
-
+        setIsLoading(true);
+        setAuthError(null);
 
         await signInWithGoogle();
-
-
-        /*
-         * onAuthStateChanged handles the rest.
-         */
 
         return true;
 
@@ -1383,7 +796,6 @@ export const AuthProvider: React.FC<{
 
         const error =
           err as Error;
-
 
         console.error(
           '[AuthContext] Google Sign-In Error:',
@@ -1409,20 +821,20 @@ export const AuthProvider: React.FC<{
           );
         }
 
-
-        setIsLoading(
-          false
-        );
-
-
         return false;
+
+      } finally {
+
+        setIsLoading(false);
       }
     };
 
 
-  // ============================================================
-  // SELECT STUDENT
-  // ============================================================
+  /*
+   * ============================================================
+   * SELECT STUDENT
+   * ============================================================
+   */
 
   const selectStudent =
     (student: Student) => {
@@ -1433,9 +845,11 @@ export const AuthProvider: React.FC<{
     };
 
 
-  // ============================================================
-  // SELECT TEACHER
-  // ============================================================
+  /*
+   * ============================================================
+   * SELECT TEACHER
+   * ============================================================
+   */
 
   const selectTeacher =
     (teacher: Teacher) => {
@@ -1446,9 +860,11 @@ export const AuthProvider: React.FC<{
     };
 
 
-  // ============================================================
-  // LOGIN AS ADMIN
-  // ============================================================
+  /*
+   * ============================================================
+   * LOGIN AS ADMIN
+   * ============================================================
+   */
 
   const loginAsAdmin =
     () => {
@@ -1468,7 +884,7 @@ export const AuthProvider: React.FC<{
 
         email:
           firebaseUser?.email ||
-          'jaf2jc@bearworks.jackson.sparcc.org',
+          'admin@bearworks.jackson.sparcc.org',
 
         displayName:
           firebaseUser?.displayName ||
@@ -1482,17 +898,12 @@ export const AuthProvider: React.FC<{
           'admin',
 
         room:
-          'Main Office',
+          'Main Office'
       };
 
 
       setCurrentUser(
         profile
-      );
-
-
-      setActiveStudent(
-        null
       );
 
 
@@ -1518,7 +929,7 @@ export const AuthProvider: React.FC<{
           true,
 
         department:
-          'Administration',
+          'Administration'
       });
 
 
@@ -1535,9 +946,11 @@ export const AuthProvider: React.FC<{
     };
 
 
-  // ============================================================
-  // LOGIN AS STUDENT BY ID
-  // ============================================================
+  /*
+   * ============================================================
+   * LOGIN AS STUDENT BY ID
+   * ============================================================
+   */
 
   const loginAsStudentById =
     (
@@ -1549,24 +962,20 @@ export const AuthProvider: React.FC<{
 
 
       const found =
-        studentsRef.current.find(
+        students.find(
           (student) =>
             student.studentId ===
             cleanId
         );
 
 
-      if (found) {
+      if (
+        found
+      ) {
 
         selectStudent(
           found
         );
-
-
-        setCurrentRole(
-          'student'
-        );
-
 
         return true;
       }
@@ -1576,23 +985,19 @@ export const AuthProvider: React.FC<{
     };
 
 
-  // ============================================================
-  // SET ROLE
-  // ============================================================
+  /*
+   * ============================================================
+   * SET ROLE
+   * ============================================================
+   */
 
   const setRole =
-    (
-      role: UserRole
-    ) => {
+    (role: UserRole) => {
 
       setCurrentRole(
         role
       );
 
-
-      // --------------------------------------------------------
-      // ADMIN
-      // --------------------------------------------------------
 
       if (
         role === 'admin'
@@ -1603,10 +1008,6 @@ export const AuthProvider: React.FC<{
         return;
       }
 
-
-      // --------------------------------------------------------
-      // TEACHER
-      // --------------------------------------------------------
 
       if (
         role === 'teacher'
@@ -1621,21 +1022,17 @@ export const AuthProvider: React.FC<{
           );
 
         } else if (
-          teachersRef.current.length > 0
+          teachers.length > 0
         ) {
 
           setActiveTeacher(
-            teachersRef.current[0]
+            teachers[0]
           );
         }
 
         return;
       }
 
-
-      // --------------------------------------------------------
-      // STUDENT
-      // --------------------------------------------------------
 
       if (
         role === 'student'
@@ -1650,11 +1047,11 @@ export const AuthProvider: React.FC<{
           );
 
         } else if (
-          studentsRef.current.length > 0
+          students.length > 0
         ) {
 
           setActiveStudent(
-            studentsRef.current[0]
+            students[0]
           );
         }
 
@@ -1663,91 +1060,41 @@ export const AuthProvider: React.FC<{
     };
 
 
-  // ============================================================
-  // LOGOUT
-  // ============================================================
+  /*
+   * ============================================================
+   * LOGOUT
+   * ============================================================
+   */
 
   const logout =
     async () => {
 
-      setCurrentRole(
-        null
-      );
+      setCurrentRole(null);
 
-      setCurrentUser(
-        null
-      );
+      setCurrentUser(null);
 
-      setActiveStudent(
-        null
-      );
+      setActiveStudent(null);
 
-      setActiveTeacher(
-        null
-      );
+      setActiveTeacher(null);
 
-      setFirebaseUser(
-        null
-      );
+      setStudents([]);
 
-
-      setStudents(
-        []
-      );
-
-      setTeachers(
-        []
-      );
-
-
-      studentsRef.current =
-        [];
-
-      teachersRef.current =
-        [];
-
-
-      /*
-       * Stop roster listeners.
-       */
-
-      if (
-        unsubStudentsRef.current
-      ) {
-
-        unsubStudentsRef.current();
-
-        unsubStudentsRef.current =
-          null;
-      }
-
-
-      if (
-        unsubTeachersRef.current
-      ) {
-
-        unsubTeachersRef.current();
-
-        unsubTeachersRef.current =
-          null;
-      }
-
+      setTeachers([]);
 
       await signOutFromApp();
     };
 
 
-  // ============================================================
-  // SEED DATA
-  // ============================================================
+  /*
+   * ============================================================
+   * SEED DATA
+   * ============================================================
+   */
 
   const seedData =
     async () => {
 
-      setIsLoading(
-        true
-      );
-
+      setIsLoading(true);
 
       try {
 
@@ -1760,21 +1107,20 @@ export const AuthProvider: React.FC<{
           error
         );
 
-
         throw error;
 
       } finally {
 
-        setIsLoading(
-          false
-        );
+        setIsLoading(false);
       }
     };
 
 
-  // ============================================================
-  // PROVIDER
-  // ============================================================
+  /*
+   * ============================================================
+   * PROVIDER
+   * ============================================================
+   */
 
   return (
 
@@ -1815,7 +1161,8 @@ export const AuthProvider: React.FC<{
 
         logout,
 
-        seedData,
+        seedData
+
       }}
     >
 
@@ -1826,9 +1173,11 @@ export const AuthProvider: React.FC<{
 };
 
 
-// ============================================================
-// USE AUTH HOOK
-// ============================================================
+/*
+ * ==============================================================
+ * USE AUTH HOOK
+ * ==============================================================
+ */
 
 export const useAuth = () => {
 
