@@ -7,8 +7,7 @@ import {
   getUserProfile, 
   saveUserProfile, 
   subscribeToStudents, 
-  subscribeToUserProfiles,
-  subscribeToUsers,
+  subscribeToTeachers,
   seedInitialJMMSData,
   ALLOWED_DOMAIN
 } from '../lib/firebase';
@@ -49,302 +48,362 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [authError, setAuthError] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(false);
 
-  // 1. Listen for Auth State Changes
+  // ==========================================
+  // AUTHENTICATION
+  // ==========================================
+
   useEffect(() => {
-let unsubStudents: (() => void) | undefined;
-let unsubTeachers: (() => void) | undefined;
-let unsubUserProfiles: (() => void) | undefined;
-    
+    let unsubStudents: (() => void) | undefined;
+    let unsubTeachers: (() => void) | undefined;
 
+    const processAuthenticatedUser = async (user: User | null) => {
+      setFirebaseUser(user);
 
-const processAuthenticatedUser = async (user: User) => {
-  setFirebaseUser(user);
+      if (user && !user.isAnonymous) {
+        const email = user.email || '';
+        const emailDomain = email.split('@')[1]?.toLowerCase();
 
-  if (user && !user.isAnonymous) {
-    const email = user.email || '';
-    const emailDomain = email.split('@')[1]?.toLowerCase();
+        const isAuthorizedDomain =
+          emailDomain === ALLOWED_DOMAIN.toLowerCase() ||
+          email.toLowerCase() === 'jaf2jc@bearworks.jackson.sparcc.org';
 
-    const isAuthorizedDomain =
-      emailDomain === ALLOWED_DOMAIN.toLowerCase() ||
-      email.toLowerCase() === 'jaf2jc@bearworks.jackson.sparcc.org';
+        if (!isAuthorizedDomain && emailDomain) {
+          setAuthError(
+            `Access restricted: Please sign in with your Jackson Memorial Middle School account (@${ALLOWED_DOMAIN}).`
+          );
 
-    if (!isAuthorizedDomain && emailDomain) {
-      setAuthError(
-        `Access restricted: Please sign in with your Jackson Memorial Middle School account (@${ALLOWED_DOMAIN}).`
-      );
-      await signOutFromApp();
-      return;
-    }
+          await signOutFromApp();
+          return;
+        }
 
-    setAuthError(null);
+        setAuthError(null);
 
-    let profile = await getUserProfile(user.uid);
+        let profile = await getUserProfile(user.uid);
 
-const emailLower = email.toLowerCase();
+        const emailLower = email.toLowerCase();
 
-const isAdminAccount =
-  emailLower === 'jaf2jc@bearworks.jackson.sparcc.org' ||
-  emailLower.includes('admin') ||
-  emailLower.startsWith('principal');
+        // ==========================================
+        // ADMIN DETECTION
+        // ==========================================
 
-if (isAdminAccount) {
-  profile = {
-    uid: user.uid,
-    email: user.email || '',
-    displayName:
-      user.displayName ||
-      user.email?.split('@')[0] ||
-      'JMMS Administrator',
-    photoURL: user.photoURL || undefined,
-    role: 'admin',
-    room: 'Main Administrative Office'
-  };
+        const isAdminAccount =
+          emailLower === 'jaf2jc@bearworks.jackson.sparcc.org' ||
+          emailLower.includes('admin') ||
+          emailLower.startsWith('principal');
 
-  await saveUserProfile(profile);
-} else if (!profile) {
-      let role: UserRole | null = null;
-      let teacherDocId: string | undefined;
-      let studentId: string | undefined;
-      let studentDocId: string | undefined;
-      let room: string | undefined;
-      let grade: number | undefined;
+        if (isAdminAccount) {
+          profile = {
+            uid: user.uid,
+            email: user.email || '',
+            displayName:
+              user.displayName ||
+              user.email?.split('@')[0] ||
+              'JMMS Administrator',
+            photoURL: user.photoURL || undefined,
+            role: 'admin',
+            room: 'Main Administrative Office'
+          };
 
-// DETERMINE USER ROLE
-if (
-  emailLower === 'jaf2jc@bearworks.jackson.sparcc.org' ||
-  emailLower.includes('admin') ||
-  emailLower.startsWith('principal')
-) {
-  role = 'admin';
-  room = 'Main Administrative Office';
-} else {
-  // All other new school accounts default to student.
-  role = 'student';
-}
+          await saveUserProfile(profile);
+        }
 
-      // If this email already exists in the student roster,
-      // associate the new user profile with that student.
-      const matchingStudent = students.find(
-        (s) => s.email?.toLowerCase() === emailLower
-      );
+        // ==========================================
+        // NEW USER
+        // ==========================================
 
-      if (matchingStudent) {
-        studentId = matchingStudent.studentId;
-        studentDocId = matchingStudent.id;
-        grade = matchingStudent.grade;
-        room = matchingStudent.homeroom;
+        else if (!profile) {
+          let role: UserRole = 'student';
+
+          let studentId: string | undefined;
+          let studentDocId: string | undefined;
+          let grade: number | undefined;
+          let room: string | undefined;
+
+          // If this email already exists in the student roster,
+          // connect the Google account to that student.
+          const matchingStudent = students.find(
+            (s) => s.email?.toLowerCase() === emailLower
+          );
+
+          if (matchingStudent) {
+            studentId = matchingStudent.studentId;
+            studentDocId = matchingStudent.id;
+            grade = matchingStudent.grade;
+            room = matchingStudent.homeroom;
+          }
+
+          profile = {
+            uid: user.uid,
+            email: user.email || '',
+            displayName:
+              user.displayName ||
+              user.email?.split('@')[0] ||
+              'JMMS User',
+            photoURL: user.photoURL || undefined,
+            role,
+            ...(studentId ? { studentId } : {}),
+            ...(studentDocId ? { studentDocId } : {}),
+            ...(grade !== undefined ? { grade } : {}),
+            ...(room ? { room } : {})
+          };
+
+          await saveUserProfile(profile);
+        }
+
+        setCurrentUser(profile);
+        setCurrentRole(profile.role);
+
+        // ==========================================
+        // SCHOOL ROSTERS
+        // ==========================================
+
+        unsubTeachers = subscribeToTeachers((teacherList) => {
+          setTeachers(teacherList);
+        });
+
+        unsubStudents = subscribeToStudents((studentList) => {
+          setStudents(studentList);
+
+          if (studentList.length === 0) {
+            seedInitialJMMSData().catch(console.error);
+          }
+        });
+
+        // ==========================================
+        // ACTIVE STUDENT
+        // ==========================================
+
+        if (profile.role === 'student' && profile.studentId) {
+          const matched = students.find(
+            (s) => s.studentId === profile.studentId
+          );
+
+          if (matched) {
+            setActiveStudent(matched);
+          }
+        }
+
+        // ==========================================
+        // ACTIVE TEACHER
+        // ==========================================
+
+        if (profile.role === 'teacher' && profile.teacherDocId) {
+          const matched = teachers.find(
+            (t) => t.id === profile.teacherDocId
+          );
+
+          if (matched) {
+            setActiveTeacher(matched);
+          }
+        }
+
+        // ==========================================
+        // ADMIN AS ACTIVE TEACHER
+        // ==========================================
+
+        if (profile.role === 'admin') {
+          setActiveTeacher({
+            id: profile.uid,
+            name: profile.displayName,
+            room: profile.room || 'Main Administrative Office',
+            subject: 'Administration',
+            email: profile.email,
+            active: true,
+            department: 'Administration'
+          });
+        }
+
+      } else {
+        // No authenticated Google user.
+        setCurrentUser(null);
+        setCurrentRole(null);
+        setActiveStudent(null);
+        setActiveTeacher(null);
       }
 
-      profile = {
-        uid: user.uid,
-        email: user.email || '',
-        displayName:
-          user.displayName ||
-          user.email?.split('@')[0] ||
-          'JMMS User',
-        photoURL: user.photoURL || undefined,
-        role,
-        ...(studentId ? { studentId } : {}),
-        ...(studentDocId ? { studentDocId } : {}),
-        ...(teacherDocId ? { teacherDocId } : {}),
-        ...(grade !== undefined ? { grade } : {}),
-        ...(room ? { room } : {})
-      };
+      setIsLoading(false);
+    };
 
-      await saveUserProfile(profile);
-    }
-
-    setCurrentUser(profile);
-    setCurrentRole(profile.role);
-    
-// Now that authentication and role are confirmed,
-    // subscribe to the school rosters.
-unsubTeachers = subscribeToTeachers((teacherList) => {
-  setTeachers(teacherList);
-});
-
-unsubUserProfiles = subscribeToUserProfiles((userList) => {
-  const realTeachers: Teacher[] = userList
-    .filter((user) => user.role === 'teacher')
-    .map((user) => ({
-      id: user.uid,
-      name: user.displayName || user.email || 'Unknown Teacher',
-      room: user.room || '',
-      subject: '',
-      email: user.email || '',
-      active: true,
-      department: ''
-    }));
-
-  setTeachers((currentTeachers) => {
-    const combined = [...currentTeachers];
-
-    realTeachers.forEach((realTeacher) => {
-      const alreadyExists = combined.some(
-        (teacher) =>
-          teacher.email?.toLowerCase() === realTeacher.email?.toLowerCase() ||
-          teacher.id === realTeacher.id
-      );
-
-      if (!alreadyExists) {
-        combined.push(realTeacher);
-      }
+    const unsubAuth = onAuthStateChanged(auth, async (user) => {
+      await processAuthenticatedUser(user);
     });
-
-    return combined.sort((a, b) =>
-      a.name.localeCompare(b.name)
-    );
-  });
-});
-    
-    if (profile.role === 'student' && profile.studentId) {
-      const matched = students.find(
-        (s) => s.studentId === profile.studentId
-      );
-
-      if (matched) {
-        setActiveStudent(matched);
-      }
-    }
-
-if (profile.role === 'teacher' && profile.teacherDocId) {
-  const matched = teachers.find(
-    (t) => t.id === profile.teacherDocId
-  );
-
-  if (matched) {
-    setActiveTeacher(matched);
-  }
-}
-
-if (profile.role === 'admin') {
-  setActiveTeacher({
-    id: profile.uid,
-    name: profile.displayName,
-    room: profile.room || 'Main Administrative Office',
-    subject: 'Administration',
-    email: profile.email,
-    active: true,
-    department: 'Administration'
-  });
-}
-  } else {
-    // No authenticated Google user yet.
-    // Do NOT attempt anonymous authentication.
-    setCurrentUser(null);
-    setCurrentRole(null);
-    setActiveStudent(null);
-    setActiveTeacher(null);
-  }
-
-  setIsLoading(false);
-};
-
-const unsubAuth = onAuthStateChanged(auth, async (user) => {
-  await processAuthenticatedUser(user);
-});
-
-
 
     return () => {
       unsubAuth();
-      if (unsubStudents) unsubStudents();
-if (unsubTeachers) unsubTeachers();
-if (unsubUserProfiles) unsubUserProfiles();
+
+      if (unsubStudents) {
+        unsubStudents();
+      }
+
+      if (unsubTeachers) {
+        unsubTeachers();
+      }
     };
   }, []);
 
-
+  // ==========================================
+  // GOOGLE LOGIN
+  // ==========================================
 
   const loginWithGoogle = async (): Promise<boolean> => {
     try {
       setIsLoading(true);
       setAuthError(null);
+
       await signInWithGoogle();
+
       return true;
+
     } catch (err: unknown) {
       const error = err as Error;
+
       console.error('Google Sign-In Error:', error);
+
       if (error.message?.includes('popup-closed-by-user')) {
         setAuthError('Sign-in cancelled.');
       } else {
-        setAuthError(error.message || 'Google Workspace sign-in failed. Please try again.');
+        setAuthError(
+          error.message ||
+          'Google Workspace sign-in failed. Please try again.'
+        );
       }
+
       return false;
+
     } finally {
       setIsLoading(false);
     }
   };
 
- const selectStudent = (student: Student) => {
-  setActiveStudent(student);
-};
+  // ==========================================
+  // SELECTION
+  // ==========================================
 
-const selectTeacher = (teacher: Teacher) => {
-  setActiveTeacher(teacher);
-};
+  const selectStudent = (student: Student) => {
+    setActiveStudent(student);
+  };
+
+  const selectTeacher = (teacher: Teacher) => {
+    setActiveTeacher(teacher);
+  };
+
+  // ==========================================
+  // ADMIN LOGIN
+  // ==========================================
 
   const loginAsAdmin = () => {
     setCurrentRole('admin');
+
     const profile: UserProfile = {
-      uid: firebaseUser ? firebaseUser.uid : 'admin-jmms-principal',
-      email: firebaseUser?.email || 'admin@bearworks.jackson.sparcc.org',
-      displayName: firebaseUser?.displayName || 'Principal / Admin Office',
-      photoURL: firebaseUser?.photoURL || undefined,
+      uid: firebaseUser
+        ? firebaseUser.uid
+        : 'admin-jmms-principal',
+
+      email:
+        firebaseUser?.email ||
+        'admin@bearworks.jackson.sparcc.org',
+
+      displayName:
+        firebaseUser?.displayName ||
+        'Principal / Admin Office',
+
+      photoURL:
+        firebaseUser?.photoURL ||
+        undefined,
+
       role: 'admin',
+
       room: 'Main Office'
     };
+
     setCurrentUser(profile);
+
     if (firebaseUser) {
       saveUserProfile(profile).catch(console.error);
     }
   };
 
+  // ==========================================
+  // LOGIN AS STUDENT BY ID
+  // ==========================================
+
   const loginAsStudentById = (studentId: string): boolean => {
     const cleanId = studentId.trim();
-    const found = students.find(s => s.studentId === cleanId);
+
+    const found = students.find(
+      (s) => s.studentId === cleanId
+    );
+
     if (found) {
       selectStudent(found);
       return true;
     }
+
     return false;
   };
 
-const setRole = (role: UserRole) => {
-  setCurrentRole(role);
+  // ==========================================
+  // ROLE
+  // ==========================================
 
-  if (role === 'admin') {
-    loginAsAdmin();
-  } else if (role === 'teacher') {
-    if (activeTeacher) {
-      setActiveTeacher(activeTeacher);
-    } else if (teachers.length > 0) {
-      setActiveTeacher(teachers[0]);
+  const setRole = (role: UserRole) => {
+    setCurrentRole(role);
+
+    if (role === 'admin') {
+
+      loginAsAdmin();
+
+    } else if (role === 'teacher') {
+
+      if (activeTeacher) {
+        setActiveTeacher(activeTeacher);
+
+      } else if (teachers.length > 0) {
+        setActiveTeacher(teachers[0]);
+      }
+
+    } else if (role === 'student') {
+
+      if (activeStudent) {
+        setActiveStudent(activeStudent);
+
+      } else if (students.length > 0) {
+        setActiveStudent(students[0]);
+      }
     }
-  } else if (role === 'student') {
-    if (activeStudent) {
-      setActiveStudent(activeStudent);
-    } else if (students.length > 0) {
-      setActiveStudent(students[0]);
-    }
-  }
-};
+  };
 
- const logout = async () => {
-  setAuthReady(false);
-  setCurrentRole(null);
-  setCurrentUser(null);
-  setActiveStudent(null);
-  setActiveTeacher(null);
+  // ==========================================
+  // LOGOUT
+  // ==========================================
 
-  await signOutFromApp();
-};
+  const logout = async () => {
+    setAuthReady(false);
+
+    setCurrentRole(null);
+    setCurrentUser(null);
+
+    setActiveStudent(null);
+    setActiveTeacher(null);
+
+    await signOutFromApp();
+  };
+
+  // ==========================================
+  // SEED DATA
+  // ==========================================
 
   const seedData = async () => {
     setIsLoading(true);
+
     await seedInitialJMMSData();
+
     setIsLoading(false);
   };
+
+  // ==========================================
+  // PROVIDER
+  // ==========================================
 
   return (
     <AuthContext.Provider
@@ -353,18 +412,26 @@ const setRole = (role: UserRole) => {
         currentUser,
         currentRole,
         setRole,
+
         students,
         teachers,
+
         isLoading,
+
         activeStudent,
         activeTeacher,
+
         authError,
         setAuthError,
+
         loginWithGoogle,
+
         selectStudent,
         selectTeacher,
+
         loginAsAdmin,
         loginAsStudentById,
+
         logout,
         seedData
       }}
@@ -374,10 +441,18 @@ const setRole = (role: UserRole) => {
   );
 };
 
+// ==========================================
+// USE AUTH
+// ==========================================
+
 export const useAuth = () => {
   const context = useContext(AuthContext);
+
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error(
+      'useAuth must be used within an AuthProvider'
+    );
   }
+
   return context;
 };
