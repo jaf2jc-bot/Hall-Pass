@@ -51,8 +51,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // 1. Listen for Auth State Changes
   useEffect(() => {
-    let unsubStudents: (() => void) | undefined;
-    let unsubTeachers: (() => void) | undefined;
+let unsubStudents: (() => void) | undefined;
+let unsubTeachers: (() => void) | undefined;
+let unsubUserProfiles: (() => void) | undefined;
     
 
 
@@ -158,7 +159,11 @@ if (
     
 // Now that authentication and role are confirmed,
     // subscribe to the school rosters.
-unsubTeachers = subscribeToUserProfiles((userList) => {
+unsubTeachers = subscribeToTeachers((teacherList) => {
+  setTeachers(teacherList);
+});
+
+unsubUserProfiles = subscribeToUserProfiles((userList) => {
   const realTeachers: Teacher[] = userList
     .filter((user) => user.role === 'teacher')
     .map((user) => ({
@@ -171,7 +176,25 @@ unsubTeachers = subscribeToUserProfiles((userList) => {
       department: ''
     }));
 
-  setTeachers(realTeachers);
+  setTeachers((currentTeachers) => {
+    const combined = [...currentTeachers];
+
+    realTeachers.forEach((realTeacher) => {
+      const alreadyExists = combined.some(
+        (teacher) =>
+          teacher.email?.toLowerCase() === realTeacher.email?.toLowerCase() ||
+          teacher.id === realTeacher.id
+      );
+
+      if (!alreadyExists) {
+        combined.push(realTeacher);
+      }
+    });
+
+    return combined.sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+  });
 });
     
     if (profile.role === 'student' && profile.studentId) {
@@ -226,7 +249,8 @@ const unsubAuth = onAuthStateChanged(auth, async (user) => {
     return () => {
       unsubAuth();
       if (unsubStudents) unsubStudents();
-      if (unsubTeachers) unsubTeachers();
+if (unsubTeachers) unsubTeachers();
+if (unsubUserProfiles) unsubUserProfiles();
     };
   }, []);
 
