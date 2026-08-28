@@ -20,6 +20,7 @@ import {
   saveUserProfile,
   subscribeToStudents,
   subscribeToTeachers,
+  subscribeToUserProfiles,
   seedInitialJMMSData,
   ALLOWED_DOMAIN
 } from '../lib/firebase';
@@ -39,6 +40,15 @@ interface AuthContextType {
 
   students: Student[];
   teachers: Teacher[];
+
+  /*
+   * All Firebase user accounts.
+   *
+   * This is separate from the Teachers collection.
+   * Request Student can use this later to find teacher
+   * accounts that may not exist in the Teachers collection.
+   */
+  userProfiles: UserProfile[];
 
   isLoading: boolean;
 
@@ -87,6 +97,18 @@ export const AuthProvider: React.FC<{
   const [teachers, setTeachers] =
     useState<Teacher[]>([]);
 
+  /*
+   * USERS COLLECTION
+   *
+   * Contains the actual Firebase user accounts.
+   *
+   * We keep this separate from "teachers" because the
+   * Teachers collection is a school roster, while Users
+   * represents actual authenticated accounts.
+   */
+  const [userProfiles, setUserProfiles] =
+    useState<UserProfile[]>([]);
+
   const [activeStudent, setActiveStudent] =
     useState<Student | null>(null);
 
@@ -107,12 +129,8 @@ export const AuthProvider: React.FC<{
    *
    * IMPORTANT:
    *
-   * We DO NOT subscribe to students or teachers until
+   * We DO NOT subscribe to students, teachers, or users until
    * Firebase confirms that the user is authenticated.
-   *
-   * This prevents:
-   *
-   * "You must be signed in to access JMMS data."
    *
    * ============================================================
    */
@@ -125,17 +143,20 @@ export const AuthProvider: React.FC<{
     let unsubTeachers:
       (() => void) | undefined;
 
+    let unsubUsers:
+      (() => void) | undefined;
+
 
     /*
      * ------------------------------------------------------------
-     * LOAD SCHOOL ROSTERS
+     * LOAD SCHOOL DATA
      * ------------------------------------------------------------
      */
 
     const startRosterSubscriptions = () => {
 
       console.log(
-        '[AuthContext] Starting authenticated roster subscriptions.'
+        '[AuthContext] Starting authenticated data subscriptions.'
       );
 
 
@@ -200,6 +221,42 @@ export const AuthProvider: React.FC<{
             );
           }
         );
+
+
+      /*
+       * USERS
+       *
+       * This reads the Firebase "users" collection.
+       *
+       * It gives us the actual user accounts, including:
+       * - uid
+       * - email
+       * - displayName
+       * - role
+       *
+       * This will allow Request Student to eventually use
+       * both Users and Teachers.
+       */
+
+      unsubUsers =
+        subscribeToUserProfiles(
+          (userList) => {
+
+            console.log(
+              '[AuthContext] User profiles loaded:',
+              userList.length
+            );
+
+            setUserProfiles(
+              [...userList].sort(
+                (a, b) =>
+                  a.displayName.localeCompare(
+                    b.displayName
+                  )
+              )
+            );
+          }
+        );
     };
 
 
@@ -235,6 +292,7 @@ export const AuthProvider: React.FC<{
 
           setStudents([]);
           setTeachers([]);
+          setUserProfiles([]);
 
           setIsLoading(false);
 
@@ -255,10 +313,7 @@ export const AuthProvider: React.FC<{
 
 
         /*
-         * IMPORTANT:
-         *
-         * Start roster listeners HERE, after Firebase
-         * authentication has completed.
+         * Start all school-data listeners after authentication.
          */
 
         startRosterSubscriptions();
@@ -400,13 +455,6 @@ export const AuthProvider: React.FC<{
           /*
            * ------------------------------------------------------
            * MATCH TEACHER
-           *
-           * IMPORTANT:
-           *
-           * The roster listener may not have returned yet.
-           *
-           * We therefore only use the roster if it is already
-           * loaded.
            * ------------------------------------------------------
            */
 
@@ -769,6 +817,12 @@ export const AuthProvider: React.FC<{
       ) {
         unsubTeachers();
       }
+
+      if (
+        unsubUsers
+      ) {
+        unsubUsers();
+      }
     };
 
   }, []);
@@ -1081,6 +1135,8 @@ export const AuthProvider: React.FC<{
 
       setTeachers([]);
 
+      setUserProfiles([]);
+
       await signOutFromApp();
     };
 
@@ -1089,7 +1145,7 @@ export const AuthProvider: React.FC<{
    * ============================================================
    * SEED DATA
    * ============================================================
-   */
+ */
 
   const seedData =
     async () => {
@@ -1138,6 +1194,8 @@ export const AuthProvider: React.FC<{
         students,
 
         teachers,
+
+        userProfiles,
 
         isLoading,
 
