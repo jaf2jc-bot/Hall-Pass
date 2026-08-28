@@ -32,7 +32,8 @@ import {
   DestinationType,
   UserProfile,
   UserRole,
-  ConflictPair
+  ConflictPair,
+  StudentRequest
 } from '../types';
 import { INITIAL_JMMS_STUDENTS, INITIAL_JMMS_TEACHERS } from './seedData';
 
@@ -60,6 +61,7 @@ export const STUDENTS_COLLECTION = 'students';
 export const TEACHERS_COLLECTION = 'teachers';
 export const HALL_PASSES_COLLECTION = 'hallPasses';
 export const CONFLICT_PAIRS_COLLECTION = 'conflictPairs';
+export const STUDENT_REQUESTS_COLLECTION = 'studentRequests';
 
 // Google Workspace domain restriction
 export const ALLOWED_DOMAIN = 'bearworks.jackson.sparcc.org';
@@ -695,6 +697,139 @@ export async function flagHallPass(passId: string, flagged: boolean): Promise<vo
   await ensureAuthenticated();
   const passDocRef = doc(db, HALL_PASSES_COLLECTION, passId);
   await updateDoc(passDocRef, { flagged });
+}
+
+// ==========================================
+// STUDENT REQUESTS
+// ==========================================
+
+export async function createStudentRequest(params: {
+  studentDocId: string;
+  studentId: string;
+  studentName: string;
+  studentEmail?: string;
+
+  teacherId: string;
+  teacher: string;
+  teacherRoom?: string;
+
+  requestDate: string;
+  period: string;
+
+  reason?: string;
+  notes?: string;
+}): Promise<string> {
+  await ensureAuthenticated();
+
+  const now = Date.now();
+
+  const requestData: Omit<StudentRequest, 'id'> = {
+    studentDocId: params.studentDocId,
+    studentId: params.studentId,
+    studentName: params.studentName,
+    studentEmail: params.studentEmail,
+
+    teacherId: params.teacherId,
+    teacher: params.teacher,
+    teacherRoom: params.teacherRoom || '',
+
+    requestDate: params.requestDate,
+    period: params.period,
+
+    reason: params.reason?.trim() || '',
+    notes: params.notes?.trim() || '',
+
+    status: 'PENDING',
+
+    createdAt: now
+  };
+
+  const docRef = await addDoc(
+    collection(db, STUDENT_REQUESTS_COLLECTION),
+    requestData
+  );
+
+  return docRef.id;
+}
+
+
+export function subscribeToStudentRequests(
+  callback: (requests: StudentRequest[]) => void
+) {
+  const q = collection(db, STUDENT_REQUESTS_COLLECTION);
+
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const list: StudentRequest[] = [];
+
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+
+        list.push({
+          id: docSnap.id,
+
+          studentDocId: data.studentDocId || '',
+          studentId: data.studentId || '',
+          studentName: data.studentName || '',
+          studentEmail: data.studentEmail || '',
+
+          teacherId: data.teacherId || '',
+          teacher: data.teacher || '',
+          teacherRoom: data.teacherRoom || '',
+
+          requestDate: data.requestDate || '',
+          period: data.period || '',
+
+          reason: data.reason || '',
+          notes: data.notes || '',
+
+          status: data.status || 'PENDING',
+
+          createdAt: Number(data.createdAt) || Date.now(),
+          completedAt: data.completedAt
+            ? Number(data.completedAt)
+            : undefined
+        });
+      });
+
+      // Today's requests first, then future requests.
+      // Within each date, sort by period.
+      list.sort((a, b) => {
+        if (a.requestDate !== b.requestDate) {
+          return a.requestDate.localeCompare(b.requestDate);
+        }
+
+        return a.period.localeCompare(b.period);
+      });
+
+      callback(list);
+    },
+    (err) => {
+      console.error(
+        'Error subscribing to student requests:',
+        err
+      );
+    }
+  );
+}
+
+
+export async function completeStudentRequest(
+  requestId: string
+): Promise<void> {
+  await ensureAuthenticated();
+
+  const requestRef = doc(
+    db,
+    STUDENT_REQUESTS_COLLECTION,
+    requestId
+  );
+
+  await updateDoc(requestRef, {
+    status: 'COMPLETED',
+    completedAt: Date.now()
+  });
 }
 
 // ==========================================
