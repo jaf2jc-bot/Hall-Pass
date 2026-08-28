@@ -832,6 +832,22 @@ export async function completeStudentRequest(
   });
 }
 
+export async function cancelStudentRequest(
+  requestId: string
+): Promise<void> {
+  await ensureAuthenticated();
+
+  const requestRef = doc(
+    db,
+    STUDENT_REQUESTS_COLLECTION,
+    requestId
+  );
+
+  await updateDoc(requestRef, {
+    status: 'CANCELLED'
+  });
+}
+
 // ==========================================
 // STUDENT ROSTER MANAGEMENT
 // ==========================================
