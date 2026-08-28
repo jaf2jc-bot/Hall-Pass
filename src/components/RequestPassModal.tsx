@@ -87,7 +87,6 @@ await requestHallPass({
   studentName: `${student.firstName} ${student.lastName}`,
   studentEmail: student.email,
   teacher: activeTeacher.name,
-  teacherUid: activeTeacher.id,
   teacherRoom: activeTeacher.room || '',
   destination: selectedDestination,
   destinationDetails: destinationDetails.trim() || undefined,
