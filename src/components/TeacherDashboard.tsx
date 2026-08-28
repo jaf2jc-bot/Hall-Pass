@@ -19,7 +19,8 @@ import {
   ClipboardList,
   Check,
   X,
-  Send
+  Send,
+  History
 } from 'lucide-react';
 
 import { useAuth } from '../contexts/AuthContext';
@@ -111,6 +112,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   useEffect(() => {
     if (!requestDate) {
       const today = new Date();
+
       const localDate =
         today.getFullYear() +
         '-' +
@@ -209,6 +211,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
   const openRequestStudentForm = (student?: Student) => {
     setSelectedRequestStudent(student || null);
+
     setRequestStudentSearch(
       student
         ? `${student.lastName}, ${student.firstName}`
@@ -445,6 +448,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     );
   })();
 
+  /*
+   * ACTIVE REQUESTS
+   *
+   * Completed and cancelled requests are intentionally excluded
+   * from these sections. They will appear only in Request History.
+   */
+
   const upcomingRequests = studentRequests.filter(
     (request) =>
       request.status === 'PENDING' &&
@@ -453,14 +463,22 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
   const todayRequests = studentRequests.filter(
     (request) =>
+      request.status === 'PENDING' &&
       request.requestDate === todayString
   );
 
   const pastRequests = studentRequests.filter(
     (request) =>
-      request.requestDate < todayString &&
-      request.status === 'PENDING'
+      request.status === 'PENDING' &&
+      request.requestDate < todayString
   );
+
+  /*
+   * HISTORY
+   *
+   * Anything that has been completed or cancelled is kept here.
+   * Nothing is deleted when the day changes.
+   */
 
   const completedRequests = studentRequests.filter(
     (request) =>
@@ -471,6 +489,19 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     (request) =>
       request.status === 'CANCELLED'
   );
+
+  const requestHistory = [
+    ...completedRequests,
+    ...cancelledRequests
+  ].sort((a, b) => {
+    /*
+     * Most recent requests first.
+     *
+     * createdAt/completedAt/etc. are not required for this to work.
+     * requestDate is used as the fallback ordering.
+     */
+    return b.requestDate.localeCompare(a.requestDate);
+  });
 
   // ============================================================
   // REQUEST CARD
@@ -558,6 +589,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 <span className="font-semibold">
                   {request.teacher}
                 </span>
+
                 {request.teacherRoom
                   ? ` • ${request.teacherRoom}`
                   : ''}
@@ -566,7 +598,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
 
             {request.status === 'COMPLETED' && (
               <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold flex items-center gap-1">
@@ -609,6 +641,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 disabled:opacity-50"
                 >
                   <Check className="w-3.5 h-3.5" />
+
                   {isLoading
                     ? 'Saving...'
                     : 'Complete'}
@@ -729,6 +762,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 </div>
 
                 <div>
+
                   <h3 className="text-xl font-black text-purple-950">
                     Request Student
                   </h3>
@@ -736,6 +770,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   <p className="text-xs text-slate-500">
                     Request a student to report to your classroom.
                   </p>
+
                 </div>
 
               </div>
@@ -765,6 +800,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               {/* Teacher */}
 
               <div>
+
                 <label className="block text-xs font-bold text-slate-800 mb-1">
                   Requesting Teacher
                 </label>
@@ -772,10 +808,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 <div className="p-3 rounded-xl bg-slate-50 border-2 border-slate-200 text-sm font-semibold text-slate-800">
                   {activeTeacher?.name ||
                     'Unable to identify teacher'}
+
                   {activeTeacher?.room
                     ? ` — ${activeTeacher.room}`
                     : ''}
                 </div>
+
               </div>
 
               {/* Student Search */}
@@ -797,6 +835,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                       setRequestStudentSearch(
                         e.target.value
                       );
+
                       setSelectedRequestStudent(null);
                     }}
                     placeholder="Search first name, last name, or ID..."
@@ -807,15 +846,18 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
                 {!selectedRequestStudent &&
                   requestStudentSearch.trim() && (
+
                     <div className="mt-2 border border-slate-200 rounded-xl max-h-48 overflow-y-auto">
 
                       {filteredRequestStudents
                         .slice(0, 12)
                         .map((student) => (
+
                           <button
                             key={student.id}
                             type="button"
                             onClick={() => {
+
                               setSelectedRequestStudent(
                                 student
                               );
@@ -823,9 +865,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                               setRequestStudentSearch(
                                 `${student.lastName}, ${student.firstName}`
                               );
+
                             }}
                             className="w-full text-left px-3 py-2.5 hover:bg-purple-50 border-b border-slate-100 last:border-0"
                           >
+
                             <div className="font-bold text-sm text-slate-900">
                               {student.lastName},{' '}
                               {student.firstName}
@@ -835,7 +879,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                               #{student.studentId} •
                               Grade {student.grade}
                             </div>
+
                           </button>
+
                         ))}
 
                       {filteredRequestStudents.length === 0 && (
@@ -845,9 +891,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                       )}
 
                     </div>
+
                   )}
 
                 {selectedRequestStudent && (
+
                   <div className="mt-2 p-3 rounded-xl bg-emerald-50 border-2 border-emerald-200 flex items-center justify-between">
 
                     <div>
@@ -866,6 +914,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     <CheckCircle2 className="w-5 h-5 text-emerald-600" />
 
                   </div>
+
                 )}
 
               </div>
@@ -1016,7 +1065,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             </h3>
 
             <p className="text-xs text-slate-500 mt-1">
-              Requests for students to report to your classroom.
+              Active requests for students to report to your classroom.
             </p>
 
           </div>
@@ -1032,7 +1081,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
         </div>
 
-        {/* TODAY */}
+        {/* ======================================================
+            TODAY
+           ====================================================== */}
 
         <div className="space-y-3">
 
@@ -1051,20 +1102,28 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           </div>
 
           {todayRequests.length === 0 ? (
+
             <div className="p-5 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center">
+
               <p className="text-sm text-slate-500">
                 No requests for today.
               </p>
+
             </div>
+
           ) : (
+
             <div className="space-y-2">
               {todayRequests.map(renderRequestCard)}
             </div>
+
           )}
 
         </div>
 
-        {/* UPCOMING */}
+        {/* ======================================================
+            UPCOMING
+           ====================================================== */}
 
         <div className="space-y-3 pt-2">
 
@@ -1083,22 +1142,31 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           </div>
 
           {upcomingRequests.length === 0 ? (
+
             <div className="p-5 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center">
+
               <p className="text-sm text-slate-500">
                 No upcoming requests.
               </p>
+
             </div>
+
           ) : (
+
             <div className="space-y-2">
               {upcomingRequests.map(renderRequestCard)}
             </div>
+
           )}
 
         </div>
 
-        {/* PAST DUE */}
+        {/* ======================================================
+            PAST DUE
+           ====================================================== */}
 
         {pastRequests.length > 0 && (
+
           <div className="space-y-3 pt-2">
 
             <div className="flex items-center gap-2">
@@ -1120,38 +1188,91 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             </div>
 
           </div>
+
         )}
 
-        {/* COMPLETED */}
+        {/* ======================================================
+            REQUEST HISTORY
+           ====================================================== */}
 
-        {completedRequests.length > 0 && (
-          <details className="pt-2">
+        {requestHistory.length > 0 && (
 
-            <summary className="cursor-pointer font-bold text-sm text-slate-600 hover:text-purple-900">
-              Completed Requests ({completedRequests.length})
+          <details className="pt-3 border-t border-slate-200">
+
+            <summary className="cursor-pointer list-none">
+
+              <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 hover:bg-slate-100 transition">
+
+                <div className="flex items-center gap-3">
+
+                  <div className="w-9 h-9 rounded-lg bg-purple-100 text-purple-900 flex items-center justify-center">
+                    <History className="w-5 h-5" />
+                  </div>
+
+                  <div>
+
+                    <h4 className="font-black text-purple-950">
+                      Request History
+                    </h4>
+
+                    <p className="text-xs text-slate-500">
+                      Completed and cancelled student requests
+                    </p>
+
+                  </div>
+
+                </div>
+
+                <span className="text-xs font-bold bg-purple-100 text-purple-800 px-2.5 py-1 rounded-full">
+                  {requestHistory.length}
+                </span>
+
+              </div>
+
             </summary>
 
-            <div className="space-y-2 mt-3">
-              {completedRequests.map(renderRequestCard)}
+            <div className="mt-3 space-y-3">
+
+              {/* HISTORY FILTER SUMMARY */}
+
+              <div className="flex flex-wrap gap-2 px-1">
+
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold">
+                  <Check className="w-3 h-3" />
+                  {completedRequests.length} Completed
+                </span>
+
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-200 text-slate-600 text-xs font-bold">
+                  <X className="w-3 h-3" />
+                  {cancelledRequests.length} Cancelled
+                </span>
+
+              </div>
+
+              {/* HISTORY CARDS */}
+
+              {requestHistory.map(renderRequestCard)}
+
             </div>
 
           </details>
+
         )}
 
-        {/* CANCELLED */}
+        {requestHistory.length === 0 && (
+          <div className="pt-3 border-t border-slate-200">
 
-        {cancelledRequests.length > 0 && (
-          <details>
+            <div className="p-4 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center">
 
-            <summary className="cursor-pointer font-bold text-sm text-slate-500 hover:text-purple-900">
-              Cancelled Requests ({cancelledRequests.length})
-            </summary>
+              <History className="w-5 h-5 text-slate-400 mx-auto mb-1" />
 
-            <div className="space-y-2 mt-3">
-              {cancelledRequests.map(renderRequestCard)}
+              <p className="text-xs text-slate-500">
+                No completed or cancelled requests yet.
+              </p>
+
             </div>
 
-          </details>
+          </div>
         )}
 
       </div>
@@ -1210,6 +1331,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 endingPassId === pass.id;
 
               return (
+
                 <div
                   key={pass.id}
                   className={`p-4 rounded-xl border-2 shadow-sm flex flex-col justify-between ${urgency.cardClass}`}
@@ -1273,6 +1395,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                       disabled={isEnding}
                       className="px-3 py-1.5 bg-purple-900 hover:bg-purple-950 text-white font-bold text-xs rounded-lg shadow flex items-center gap-1.5 active:scale-95"
                     >
+
                       <RotateCcw className="w-3.5 h-3.5 text-amber-300" />
 
                       <span>
@@ -1286,7 +1409,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   </div>
 
                 </div>
+
               );
+
             })}
 
           </div>
@@ -1382,6 +1507,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   getStudentStats(student);
 
                 return (
+
                   <tr
                     key={student.id}
                     className="hover:bg-purple-50/50 transition"
@@ -1482,18 +1608,24 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     </td>
 
                   </tr>
+
                 );
+
               })}
 
               {filteredStudents.length === 0 && (
+
                 <tr>
+
                   <td
                     colSpan={7}
                     className="py-10 text-center text-slate-500"
                   >
                     No students found.
                   </td>
+
                 </tr>
+
               )}
 
             </tbody>
