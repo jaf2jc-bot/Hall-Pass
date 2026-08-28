@@ -179,15 +179,27 @@ if (
       }
     }
 
-    if (profile.role === 'teacher' && profile.teacherDocId) {
-      const matched = teachers.find(
-        (t) => t.id === profile.teacherDocId
-      );
+if (profile.role === 'teacher' && profile.teacherDocId) {
+  const matched = teachers.find(
+    (t) => t.id === profile.teacherDocId
+  );
 
-      if (matched) {
-        setActiveTeacher(matched);
-      }
-    }
+  if (matched) {
+    setActiveTeacher(matched);
+  }
+}
+
+if (profile.role === 'admin') {
+  setActiveTeacher({
+    id: profile.uid,
+    name: profile.displayName,
+    room: profile.room || 'Main Administrative Office',
+    subject: 'Administration',
+    email: profile.email,
+    active: true,
+    department: 'Administration'
+  });
+}
   } else {
     // No authenticated Google user yet.
     // Do NOT attempt anonymous authentication.
