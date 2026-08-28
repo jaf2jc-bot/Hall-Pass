@@ -42,6 +42,32 @@ export interface HallPass {
   flagged?: boolean;
 }
 
+export type StudentRequestStatus = 'PENDING' | 'COMPLETED';
+
+export interface StudentRequest {
+  id: string;
+
+  studentDocId: string;
+  studentId: string;
+  studentName: string;
+  studentEmail?: string;
+
+  teacherId: string;
+  teacher: string;
+  teacherRoom?: string;
+
+  requestDate: string; // YYYY-MM-DD
+  period: string;
+
+  reason?: string;
+  notes?: string;
+
+  status: StudentRequestStatus;
+
+  createdAt: number;
+  completedAt?: number;
+}
+
 export interface Student {
   id: string; // Firestore document ID
   studentId: string; // e.g. "80124"
