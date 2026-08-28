@@ -119,15 +119,15 @@ function MainApp() {
   // ============================================================
   // ROLE-BASED NAVIGATION
   // ============================================================
-  useEffect(() => {
-    if (currentRole === 'student') {
-      setActiveTab('student');
-    } else if (currentRole === 'teacher') {
-      if (activeTab === 'admin') {
-        setActiveTab('teacher');
-      }
-    }
-  }, [currentRole]);
+useEffect(() => {
+  if (currentRole === 'student') {
+    setActiveTab('student');
+  } else if (currentRole === 'teacher') {
+    setActiveTab('teacher');
+  } else if (currentRole === 'admin') {
+    setActiveTab('admin');
+  }
+}, [currentRole]);
 
   // ============================================================
   // MODAL FUNCTIONS
@@ -271,14 +271,14 @@ function MainApp() {
       {/* Main Application */}
       <main className="flex-1 pb-16">
 
-        {/* Student Dashboard */}
-        {activeTab === 'student' && (
-          <StudentDashboard
-            activePasses={activePasses}
-            allPasses={allPasses}
-            soundEnabled={soundEnabled}
-          />
-        )}
+        {/* Student Dashboard — Students Only */}
+{activeTab === 'student' && currentRole === 'student' && (
+  <StudentDashboard
+    activePasses={activePasses}
+    allPasses={allPasses}
+    soundEnabled={soundEnabled}
+  />
+)}
 
         {/* Live Hallway Monitor */}
         {activeTab === 'currently-out' &&
