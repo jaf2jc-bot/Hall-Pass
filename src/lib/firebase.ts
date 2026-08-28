@@ -907,157 +907,120 @@ export async function seedInitialJMMSData(): Promise<{
 export function subscribeToStudents(
   callback: (students: Student[]) => void
 ) {
-  let unsubscribeSnapshot:
-    (() => void) | null = null;
-
+  let unsubscribeSnapshot: (() => void) | null = null;
   let cancelled = false;
 
   ensureAuthenticated()
     .then(() => {
-
       if (cancelled) {
         return;
       }
 
-      const studentsRef =
-        collection(
-          db,
-          STUDENTS_COLLECTION
-        );
+      const studentsRef = collection(
+        db,
+        STUDENTS_COLLECTION
+      );
 
-      unsubscribeSnapshot =
-        onSnapshot(
-          studentsRef,
+      unsubscribeSnapshot = onSnapshot(
+        studentsRef,
 
-          (snapshot) => {
-
-            const list: Student[] = [];
-
-            snapshot.forEach(
-              (docSnap) => {
-
-                const data =
-                  docSnap.data();
-
-                list.push({
-
-                  id:
-                    docSnap.id,
-
-                  studentId:
-                    String(
-                      data.studentId || ''
-                    ),
-
-                  firstName:
-                    String(
-                      data.firstName || ''
-                    ),
-
-                  lastName:
-                    String(
-                      data.lastName || ''
-                    ),
-
-                  grade:
-                    Number(
-                      data.grade
-                    ) || 8,
-
-                  active:
-                    data.active !== false,
-
-                  email:
-                    String(
-                      data.email || ''
-                    ),
-
-                  homeroom:
-                    String(
-                      data.homeroom || ''
-                    ),
-
-                  createdAt:
-                    Number(
-                      data.createdAt
-                    ) || 0,
-                });
-              }
-            );
-
-
-            list.sort(
-              (a, b) => {
-
-                const lastNameCompare =
-                  a.lastName.localeCompare(
-                    b.lastName
-                  );
-
-                if (
-                  lastNameCompare !== 0
-                ) {
-                  return lastNameCompare;
-                }
-
-                return a.firstName.localeCompare(
-                  b.firstName
-                );
-              }
-            );
-
-
-            console.log(
-              `[Firebase] Students loaded from Firestore: ${list.length}`
-            );
-
-
-            callback(
-              list
-            );
-          },
-
-          (error) => {
-
-            console.error(
-              '[Firebase] Error subscribing to students:',
-              error
-            );
-
-            /*
-             * DO NOT replace the roster with [] on an error.
-             */
+        (snapshot) => {
+          if (cancelled) {
+            return;
           }
-        );
+
+          const list: Student[] = [];
+
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+
+            list.push({
+              id: docSnap.id,
+
+              studentId:
+                String(data.studentId || ''),
+
+              firstName:
+                String(data.firstName || ''),
+
+              lastName:
+                String(data.lastName || ''),
+
+              grade:
+                Number(data.grade) || 8,
+
+              active:
+                data.active !== false,
+
+              email:
+                String(data.email || ''),
+
+              homeroom:
+                String(data.homeroom || ''),
+
+              createdAt:
+                Number(data.createdAt) || 0
+            });
+          });
+
+          list.sort((a, b) => {
+            const lastNameCompare =
+              a.lastName.localeCompare(
+                b.lastName
+              );
+
+            if (lastNameCompare !== 0) {
+              return lastNameCompare;
+            }
+
+            return a.firstName.localeCompare(
+              b.firstName
+            );
+          });
+
+          console.log(
+            '[Firebase] Students loaded from Firestore:',
+            list.length
+          );
+
+          callback(list);
+        },
+
+        (error) => {
+          console.error(
+            '[Firebase] Error subscribing to students:',
+            error
+          );
+
+          /*
+           * IMPORTANT:
+           * Do NOT replace the existing roster with
+           * an empty array when Firestore temporarily
+           * fails.
+           */
+        }
+      );
     })
     .catch((error) => {
-
       console.error(
         '[Firebase] Unable to authenticate before loading students:',
         error
       );
 
       /*
-       * Do not erase existing roster data.
+       * Do not erase an existing roster.
        */
     });
 
-
   return () => {
-
     cancelled = true;
 
-    if (
-      unsubscribeSnapshot
-    ) {
-
+    if (unsubscribeSnapshot) {
       unsubscribeSnapshot();
-
-      unsubscribeSnapshot =
-        null;
     }
   };
 }
+
 
 // ============================================================
 // TEACHER LISTENER
@@ -1066,131 +1029,99 @@ export function subscribeToStudents(
 export function subscribeToTeachers(
   callback: (teachers: Teacher[]) => void
 ) {
-  let unsubscribeSnapshot:
-    (() => void) | null = null;
-
+  let unsubscribeSnapshot: (() => void) | null = null;
   let cancelled = false;
 
   ensureAuthenticated()
     .then(() => {
-
       if (cancelled) {
         return;
       }
 
-      const teachersRef =
-        collection(
-          db,
-          TEACHERS_COLLECTION
-        );
+      const teachersRef = collection(
+        db,
+        TEACHERS_COLLECTION
+      );
 
-      unsubscribeSnapshot =
-        onSnapshot(
-          teachersRef,
+      unsubscribeSnapshot = onSnapshot(
+        teachersRef,
 
-          (snapshot) => {
-
-            const list: Teacher[] = [];
-
-            snapshot.forEach(
-              (docSnap) => {
-
-                const data =
-                  docSnap.data();
-
-                list.push({
-
-                  id:
-                    docSnap.id,
-
-                  name:
-                    String(
-                      data.name || ''
-                    ),
-
-                  room:
-                    String(
-                      data.room || ''
-                    ),
-
-                  subject:
-                    String(
-                      data.subject || ''
-                    ),
-
-                  email:
-                    String(
-                      data.email || ''
-                    ),
-
-                  active:
-                    data.active !== false,
-
-                  department:
-                    String(
-                      data.department || ''
-                    ),
-                });
-              }
-            );
-
-
-            list.sort(
-              (a, b) =>
-                a.name.localeCompare(
-                  b.name
-                )
-            );
-
-
-            console.log(
-              `[Firebase] Teachers loaded from Firestore: ${list.length}`
-            );
-
-
-            callback(
-              list
-            );
-          },
-
-          (error) => {
-
-            console.error(
-              '[Firebase] Error subscribing to teachers:',
-              error
-            );
-
-            /*
-             * DO NOT replace the roster with [] on an error.
-             */
+        (snapshot) => {
+          if (cancelled) {
+            return;
           }
-        );
+
+          const list: Teacher[] = [];
+
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+
+            list.push({
+              id: docSnap.id,
+
+              name:
+                String(data.name || ''),
+
+              room:
+                String(data.room || ''),
+
+              subject:
+                String(data.subject || ''),
+
+              email:
+                String(data.email || ''),
+
+              active:
+                data.active !== false,
+
+              department:
+                String(data.department || '')
+            });
+          });
+
+          list.sort((a, b) =>
+            a.name.localeCompare(b.name)
+          );
+
+          console.log(
+            '[Firebase] Teachers loaded from Firestore:',
+            list.length
+          );
+
+          callback(list);
+        },
+
+        (error) => {
+          console.error(
+            '[Firebase] Error subscribing to teachers:',
+            error
+          );
+
+          /*
+           * IMPORTANT:
+           * Do NOT replace the existing roster with
+           * an empty array when Firestore temporarily
+           * fails.
+           */
+        }
+      );
     })
     .catch((error) => {
-
       console.error(
         '[Firebase] Unable to authenticate before loading teachers:',
         error
       );
 
       /*
-       * Do not erase existing roster data.
+       * Do not erase an existing roster.
        */
     });
 
-
   return () => {
-
     cancelled = true;
 
-    if (
-      unsubscribeSnapshot
-    ) {
-
+    if (unsubscribeSnapshot) {
       unsubscribeSnapshot();
-
-      unsubscribeSnapshot =
-        null;
     }
   };
 }
