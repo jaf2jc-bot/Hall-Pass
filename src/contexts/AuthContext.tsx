@@ -7,7 +7,7 @@ import {
   getUserProfile, 
   saveUserProfile, 
   subscribeToStudents, 
-  subscribeToTeachers,
+  subscribeToUserProfiles,
   subscribeToUsers,
   seedInitialJMMSData,
   ALLOWED_DOMAIN
@@ -158,17 +158,21 @@ if (
     
 // Now that authentication and role are confirmed,
     // subscribe to the school rosters.
-    unsubTeachers = subscribeToTeachers((teacherList) => {
-      setTeachers(teacherList);
-    });
+unsubTeachers = subscribeToUserProfiles((userList) => {
+  const realTeachers: Teacher[] = userList
+    .filter((user) => user.role === 'teacher')
+    .map((user) => ({
+      id: user.uid,
+      name: user.displayName || user.email || 'Unknown Teacher',
+      room: user.room || '',
+      subject: '',
+      email: user.email || '',
+      active: true,
+      department: ''
+    }));
 
-    unsubStudents = subscribeToStudents((studentList) => {
-      setStudents(studentList);
-
-      if (studentList.length === 0) {
-        seedInitialJMMSData().catch(console.error);
-      }
-    });
+  setTeachers(realTeachers);
+});
     
     if (profile.role === 'student' && profile.studentId) {
       const matched = students.find(
