@@ -220,6 +220,113 @@ export async function getUserProfile(
 }
 
 
+// ============================================================
+// FIND TEACHER BY EMAIL
+// ============================================================
+
+export async function getTeacherByEmail(
+  email: string
+): Promise<(Teacher & { id: string }) | null> {
+
+  try {
+
+    await ensureAuthenticated();
+
+    const teachersQuery = query(
+      collection(
+        db,
+        TEACHERS_COLLECTION
+      ),
+      where(
+        'email',
+        '==',
+        email.toLowerCase()
+      )
+    );
+
+    const snapshot =
+      await getDocs(
+        teachersQuery
+      );
+
+    if (snapshot.empty) {
+      return null;
+    }
+
+    const teacherDoc =
+      snapshot.docs[0];
+
+    const data =
+      teacherDoc.data();
+
+    return {
+      id: teacherDoc.id,
+
+      name:
+        String(data.name || ''),
+
+      room:
+        String(data.room || ''),
+
+      subject:
+        String(data.subject || ''),
+
+      email:
+        String(data.email || ''),
+
+      active:
+        data.active !== false,
+
+      department:
+        String(data.department || '')
+    };
+
+  } catch (error) {
+
+    console.error(
+      '[Firebase] Error finding teacher by email:',
+      error
+    );
+
+    return null;
+  }
+}
+
+
+// ============================================================
+// ATTACH FIREBASE UID TO TEACHER
+// ============================================================
+
+export async function attachTeacherUid(
+  teacherId: string,
+  uid: string
+): Promise<void> {
+
+  await ensureAuthenticated();
+
+  const teacherRef =
+    doc(
+      db,
+      TEACHERS_COLLECTION,
+      teacherId
+    );
+
+  await updateDoc(
+    teacherRef,
+    {
+      uid: uid,
+      updatedAt: Date.now()
+    }
+  );
+
+  console.log(
+    '[Firebase] Attached Firebase UID to teacher:',
+    teacherId,
+    uid
+  );
+}
+
+
 export async function saveUserProfile(
   profile: UserProfile
 ): Promise<void> {
@@ -1125,6 +1232,7 @@ export function subscribeToTeachers(
     }
   };
 }
+
 
 // ============================================================
 // ACTIVE HALL PASSES
