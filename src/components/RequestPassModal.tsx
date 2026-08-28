@@ -86,12 +86,9 @@ await requestHallPass({
   studentId: student.studentId,
   studentName: `${student.firstName} ${student.lastName}`,
   studentEmail: student.email,
-
-  // Automatically identify the authorizing teacher
   teacher: activeTeacher.name,
-  teacherUid: activeTeacher.uid,
+  teacherUid: activeTeacher.id,
   teacherRoom: activeTeacher.room || '',
-
   destination: selectedDestination,
   destinationDetails: destinationDetails.trim() || undefined,
   createdBy: 'teacher'
