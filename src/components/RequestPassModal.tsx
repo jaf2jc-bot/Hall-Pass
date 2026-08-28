@@ -142,7 +142,15 @@ export const RequestPassModal: React.FC<RequestPassModalProps> = ({
       setStudentSearch('');
     }
   }, [isOpen]);
+useEffect(() => {
+  if (!studentSearch.trim()) {
+    return;
+  }
 
+  if (filteredStudents.length === 1) {
+    setSelectedStudentId(filteredStudents[0].studentId);
+  }
+}, [studentSearch, selectedStudentId, filteredStudents.length]);
   if (!isOpen) return null;
 
   // ============================================================
@@ -283,84 +291,71 @@ export const RequestPassModal: React.FC<RequestPassModalProps> = ({
         >
 
           {/* ==================================================
-              STUDENT SEARCH + SELECTOR
-              ================================================== */}
-          <div>
-            <label className="block font-bold text-slate-800 mb-1">
-              Select Student *
-            </label>
+    STUDENT SEARCH + SELECTOR
+    ================================================== */}
+<div>
+  <label className="block font-bold text-slate-800 mb-1">
+    Select Student *
+  </label>
 
-            {/* Search Box */}
-            <div className="relative mb-2">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+  {/* Search Box */}
+  <div className="relative mb-2">
+    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
 
-              <input
-                id="input-search-student"
-                type="text"
-                placeholder="Search first name, last name, or ID..."
-                value={studentSearch}
-                onChange={(e) =>
-                  setStudentSearch(e.target.value)
-                }
-                className="w-full pl-9 pr-4 py-2.5 rounded-xl border-2 border-slate-200 focus:border-purple-600 focus:ring-2 focus:ring-purple-100 outline-none text-slate-800"
-              />
-            </div>
+    <input
+      id="input-search-student"
+      type="text"
+      placeholder="Search first name, last name, or ID..."
+      value={studentSearch}
+      onChange={(e) => {
+        setStudentSearch(e.target.value);
+      }}
+      className="w-full pl-9 pr-4 py-2.5 rounded-xl border-2 border-slate-200 focus:border-purple-600 focus:ring-2 focus:ring-purple-100 outline-none text-slate-800"
+    />
+  </div>
 
-            {/* Result Count */}
-            <div className="flex items-center justify-between mb-1 px-1">
-              <span className="text-[10px] text-slate-400">
-                {studentSearch.trim()
-                  ? `${filteredStudents.length} student${
-                      filteredStudents.length === 1
-                        ? ''
-                        : 's'
-                    } found`
-                  : `${sortedStudents.length} students`}
-              </span>
+  {/* Result Count */}
+  <div className="flex items-center justify-between mb-1 px-1">
+    <span className="text-[10px] text-slate-400">
+      {studentSearch.trim()
+        ? `${filteredStudents.length} student${
+            filteredStudents.length === 1 ? '' : 's'
+          } found`
+        : `${sortedStudents.length} students`}
+    </span>
 
-              <span className="text-[10px] text-slate-400">
-                Sorted by last name
-              </span>
-            </div>
+    <span className="text-[10px] text-slate-400">
+      Sorted by last name
+    </span>
+  </div>
 
-            {/* Student Selector */}
-            <select
-              id="select-student"
-              value={selectedStudentId}
-              onChange={(e) =>
-                setSelectedStudentId(e.target.value)
-              }
-              required
-              size={Math.min(
-                Math.max(filteredStudents.length, 1),
-                6
-              )}
-              className="w-full p-2 rounded-xl border-2 border-slate-200 focus:border-purple-600 outline-none font-medium bg-white text-slate-800"
-            >
-              {filteredStudents.length === 0 ? (
-                <option value="" disabled>
-                  No students found
-                </option>
-              ) : (
-                filteredStudents.map((s) => (
-                  <option
-                    key={s.id}
-                    value={s.studentId}
-                  >
-                    {s.lastName}, {s.firstName} (#
-                    {s.studentId} • Gr. {s.grade})
-                  </option>
-                ))
-              )}
-            </select>
+  {/* Student Dropdown */}
+  <select
+    id="select-student"
+    value={selectedStudentId}
+    onChange={(e) => {
+      setSelectedStudentId(e.target.value);
+      setErrorMsg(null);
+    }}
+    required
+    className="w-full p-2.5 rounded-xl border-2 border-slate-200 focus:border-purple-600 outline-none font-medium bg-white text-slate-800"
+  >
+    <option value="" disabled>
+      {filteredStudents.length === 0
+        ? 'No students found'
+        : 'Select a student...'}
+    </option>
 
-            {filteredStudents.length > 6 && (
-              <p className="text-[10px] text-slate-400 mt-1">
-                Showing first 6 results. Continue typing to
-                narrow your search.
-              </p>
-            )}
-          </div>
+    {filteredStudents.map((s) => (
+      <option
+        key={s.id}
+        value={s.studentId}
+      >
+        {s.lastName}, {s.firstName} (#{s.studentId} • Gr. {s.grade})
+      </option>
+    ))}
+  </select>
+</div>
 
           {/* ==================================================
               DESTINATION
