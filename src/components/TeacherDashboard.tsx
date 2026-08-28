@@ -1320,17 +1320,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
           </div>
 
-          <button
-            type="button"
-            onClick={() =>
-              openRequestStudentForm()
-            }
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            Request Student
-          </button>
-
         </div>
 
         {/* INCOMING REQUESTS */}
