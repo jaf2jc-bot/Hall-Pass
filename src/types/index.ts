@@ -42,7 +42,10 @@ export interface HallPass {
   flagged?: boolean;
 }
 
-export type StudentRequestStatus = 'PENDING' | 'COMPLETED';
+export type StudentRequestStatus =
+  | 'PENDING'
+  | 'COMPLETED'
+  | 'CANCELLED';
 
 export interface StudentRequest {
   id: string;
