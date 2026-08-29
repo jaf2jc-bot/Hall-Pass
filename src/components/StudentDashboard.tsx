@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+
 import {
   GraduationCap,
   Clock,
@@ -13,7 +14,7 @@ import {
   BookOpen,
   HelpCircle,
   Send,
-  XCircle
+  ShieldCheck
 } from 'lucide-react';
 
 import { useAuth } from '../contexts/AuthContext';
@@ -48,8 +49,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   allPasses,
   soundEnabled
 }) => {
+
   const {
     currentUser,
+    currentRole,
     activeStudent
   } = useAuth();
 
@@ -74,7 +77,15 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const [requestLoading, setRequestLoading] =
     useState(true);
 
-  const [, setTick] = useState(0);
+  const [, setTick] =
+    useState(0);
+
+  // ============================================================
+  // ADMIN TEST MODE
+  // ============================================================
+
+  const isAdminTestMode =
+    currentRole === 'admin';
 
   // ============================================================
   // FIND CURRENT STUDENT'S ACTIVE PASS
@@ -85,8 +96,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       (pass) =>
         activeStudent &&
         (
-          pass.studentId === activeStudent.studentId ||
-          pass.studentDocId === activeStudent.id
+          pass.studentId ===
+            activeStudent.studentId ||
+          pass.studentDocId ===
+            activeStudent.id
         )
     ) || null;
 
@@ -95,9 +108,12 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   // ============================================================
 
   useEffect(() => {
+
     if (!activeStudent) {
+
       setPendingRequest(null);
       setRequestLoading(false);
+
       return;
     }
 
@@ -107,6 +123,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       subscribeToStudentHallPassRequests(
         activeStudent.studentId,
         (requests) => {
+
           const pending =
             requests
               .filter(
@@ -118,12 +135,17 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   b.createdAt - a.createdAt
               )[0] || null;
 
-          setPendingRequest(pending);
+          setPendingRequest(
+            pending
+          );
+
           setRequestLoading(false);
         }
       );
 
-    return () => unsubscribe();
+    return () =>
+      unsubscribe();
+
   }, [activeStudent]);
 
   // ============================================================
@@ -131,15 +153,24 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   // ============================================================
 
   useEffect(() => {
-    if (!myActivePass) return;
+
+    if (!myActivePass) {
+      return;
+    }
 
     const timer =
       setInterval(
-        () => setTick((value) => value + 1),
+        () =>
+          setTick(
+            (value) =>
+              value + 1
+          ),
         1000
       );
 
-    return () => clearInterval(timer);
+    return () =>
+      clearInterval(timer);
+
   }, [myActivePass]);
 
   // ============================================================
@@ -151,15 +182,19 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       (pass) =>
         activeStudent &&
         (
-          pass.studentId === activeStudent.studentId ||
-          pass.studentDocId === activeStudent.id
+          pass.studentId ===
+            activeStudent.studentId ||
+          pass.studentDocId ===
+            activeStudent.id
         )
     );
 
   const myPassesToday =
     myRecentPasses.filter(
       (pass) =>
-        new Date(pass.timeOut).toDateString() ===
+        new Date(
+          pass.timeOut
+        ).toDateString() ===
         new Date().toDateString()
     );
 
@@ -170,35 +205,46 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const handleRequestPass = async (
     e: React.FormEvent
   ) => {
+
     e.preventDefault();
 
     if (!activeStudent) {
+
       setErrorMsg(
         'Your student profile could not be identified.'
       );
+
       return;
     }
 
     if (myActivePass) {
+
       setErrorMsg(
         'You already have an active hall pass.'
       );
+
       return;
     }
 
     if (pendingRequest) {
+
       setErrorMsg(
         'You already have a hall pass request waiting for teacher approval.'
       );
+
       return;
     }
 
     setIsSubmitting(true);
+
     setErrorMsg(null);
+
     setSuccessMsg(null);
 
     try {
+
       await createStudentHallPassRequest({
+
         studentDocId:
           activeStudent.id,
 
@@ -218,20 +264,26 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         teacherName: '',
 
         teacherRoom:
-          activeStudent.homeroom || '',
+          activeStudent.homeroom ||
+          '',
 
         destination:
           selectedDestination,
 
         destinationDetails:
-          destinationDetails.trim() || '',
+          destinationDetails.trim() ||
+          '',
 
         notes:
-          destinationDetails.trim() || ''
+          destinationDetails.trim() ||
+          ''
       });
 
       if (soundEnabled) {
-        playNotificationTone('start');
+
+        playNotificationTone(
+          'start'
+        );
       }
 
       setSuccessMsg(
@@ -240,14 +292,20 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
       setDestinationDetails('');
 
-    } catch (err: unknown) {
-      const error = err as Error;
+    } catch (
+      err: unknown
+    ) {
+
+      const error =
+        err as Error;
 
       setErrorMsg(
         error.message ||
         'Unable to send your hall pass request.'
       );
+
     } finally {
+
       setIsSubmitting(false);
     }
   };
@@ -259,27 +317,43 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const getDestinationIcon = (
     destination: DestinationType
   ) => {
+
     switch (destination) {
+
       case 'Restroom':
-        return <Bath className="w-5 h-5" />;
+        return (
+          <Bath className="w-5 h-5" />
+        );
 
       case 'Office':
-        return <Building2 className="w-5 h-5" />;
+        return (
+          <Building2 className="w-5 h-5" />
+        );
 
       case 'Nurse':
-        return <HeartPulse className="w-5 h-5" />;
+        return (
+          <HeartPulse className="w-5 h-5" />
+        );
 
       case 'Counselor':
-        return <GraduationCap className="w-5 h-5" />;
+        return (
+          <GraduationCap className="w-5 h-5" />
+        );
 
       case 'Another Classroom':
-        return <DoorOpen className="w-5 h-5" />;
+        return (
+          <DoorOpen className="w-5 h-5" />
+        );
 
       case 'Library':
-        return <BookOpen className="w-5 h-5" />;
+        return (
+          <BookOpen className="w-5 h-5" />
+        );
 
       default:
-        return <HelpCircle className="w-5 h-5" />;
+        return (
+          <HelpCircle className="w-5 h-5" />
+        );
     }
   };
 
@@ -288,12 +362,17 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   // ============================================================
 
   if (!activeStudent) {
+
     return (
+
       <div className="max-w-xl mx-auto py-12 px-4 text-center">
+
         <div className="bg-white rounded-2xl shadow-xl p-8 border border-purple-100">
 
           <div className="w-16 h-16 rounded-full bg-purple-100 text-purple-900 mx-auto flex items-center justify-center mb-4">
+
             <GraduationCap className="w-8 h-8" />
+
           </div>
 
           <h2 className="text-2xl font-bold text-purple-950 mb-2">
@@ -301,18 +380,24 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           </h2>
 
           <p className="text-slate-600 text-sm">
-            Your student profile could not be loaded.
-            Please sign out and sign back in.
+
+            {isAdminTestMode
+              ? 'The student roster is still loading. Please wait a moment and try again.'
+              : 'Your student profile could not be loaded. Please sign out and sign back in.'}
+
           </p>
 
         </div>
+
       </div>
     );
   }
 
   const urgency =
     myActivePass
-      ? getPassUrgency(myActivePass.timeOut)
+      ? getPassUrgency(
+          myActivePass.timeOut
+        )
       : null;
 
   // ============================================================
@@ -320,7 +405,70 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   // ============================================================
 
   return (
+
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+      {/* ======================================================
+          ADMIN TEST MODE CARD
+      ====================================================== */}
+
+      {isAdminTestMode && (
+
+        <div className="bg-amber-50 border-2 border-amber-400 rounded-2xl p-4 shadow-md">
+
+          <div className="flex items-start gap-3">
+
+            <div className="w-10 h-10 rounded-xl bg-amber-400 text-purple-950 flex items-center justify-center flex-shrink-0">
+
+              <ShieldCheck className="w-5 h-5" />
+
+            </div>
+
+            <div className="flex-1">
+
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+
+                <h3 className="font-black text-purple-950">
+                  ADMIN TEST MODE
+                </h3>
+
+                <span className="text-xs font-bold bg-purple-950 text-amber-300 px-2.5 py-1 rounded-full">
+
+                  Acting as Student
+
+                </span>
+
+              </div>
+
+              <p className="text-sm text-amber-900 mt-1">
+
+                You are viewing the student experience as:
+
+                <span className="font-black ml-1">
+                  {activeStudent.firstName}{' '}
+                  {activeStudent.lastName}
+                </span>
+
+                <span className="text-amber-700 ml-1">
+                  (#{activeStudent.studentId})
+                </span>
+
+              </p>
+
+              <p className="text-xs text-amber-800 mt-1">
+
+                Your administrator account and permissions have
+                not changed. This is only a testing view.
+
+              </p>
+
+            </div>
+
+          </div>
+
+        </div>
+
+      )}
 
       {/* ======================================================
           STUDENT HEADER
@@ -333,8 +481,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           <div className="flex items-center gap-4">
 
             <div className="w-14 h-14 rounded-2xl bg-amber-400 text-purple-950 font-black text-xl flex items-center justify-center shadow-lg">
+
               {activeStudent.firstName[0]}
               {activeStudent.lastName[0]}
+
             </div>
 
             <div>
@@ -342,22 +492,30 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               <div className="flex items-center gap-2">
 
                 <span className="text-xs font-bold bg-amber-400 text-purple-950 px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+
                   Grade {activeStudent.grade}
+
                 </span>
 
                 <span className="text-xs text-purple-200 font-mono">
+
                   #{activeStudent.studentId}
+
                 </span>
 
               </div>
 
               <h2 className="text-2xl font-black text-white mt-1">
+
                 {activeStudent.firstName}{' '}
                 {activeStudent.lastName}
+
               </h2>
 
               <p className="text-xs text-purple-200">
+
                 Hall Pass System
+
               </p>
 
             </div>
@@ -373,6 +531,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 <Clock className="w-5 h-5" />
 
                 <div>
+
                   <div className="text-[10px] uppercase tracking-wider font-extrabold">
                     Current Status
                   </div>
@@ -380,6 +539,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   <div className="text-sm">
                     Pass Active
                   </div>
+
                 </div>
 
               </div>
@@ -391,6 +551,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 <Clock className="w-5 h-5 text-blue-300" />
 
                 <div>
+
                   <div className="text-[10px] uppercase tracking-wider font-semibold">
                     Current Status
                   </div>
@@ -398,6 +559,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   <div className="text-sm">
                     Waiting for Approval
                   </div>
+
                 </div>
 
               </div>
@@ -409,6 +571,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 <CheckCircle2 className="w-5 h-5 text-emerald-400" />
 
                 <div>
+
                   <div className="text-[10px] uppercase tracking-wider font-semibold">
                     Current Status
                   </div>
@@ -416,6 +579,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   <div className="text-sm">
                     In Classroom
                   </div>
+
                 </div>
 
               </div>
@@ -429,6 +593,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         <div className="mt-4 pt-4 border-t border-purple-800/80 grid grid-cols-2 gap-3 text-xs">
 
           <div className="bg-purple-900/60 rounded-lg p-2.5">
+
             <span className="text-purple-300 block">
               Passes Today
             </span>
@@ -436,9 +601,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             <span className="text-lg font-bold text-amber-300">
               {myPassesToday.length}
             </span>
+
           </div>
 
           <div className="bg-purple-900/60 rounded-lg p-2.5">
+
             <span className="text-purple-300 block">
               Total Passes
             </span>
@@ -446,6 +613,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             <span className="text-lg font-bold text-white">
               {myRecentPasses.length}
             </span>
+
           </div>
 
         </div>
@@ -457,11 +625,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       ====================================================== */}
 
       {errorMsg && (
+
         <div className="bg-rose-50 border-l-4 border-rose-500 p-4 rounded-xl text-rose-800 flex items-start gap-3 shadow-sm">
 
           <AlertTriangle className="w-5 h-5 text-rose-600 flex-shrink-0" />
 
           <div className="text-sm">
+
             <p className="font-bold">
               Notice
             </p>
@@ -469,9 +639,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             <p>
               {errorMsg}
             </p>
+
           </div>
 
         </div>
+
       )}
 
       {/* ======================================================
@@ -479,11 +651,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       ====================================================== */}
 
       {successMsg && (
+
         <div className="bg-emerald-50 border-l-4 border-emerald-500 p-4 rounded-xl text-emerald-900 flex items-start gap-3 shadow-sm">
 
           <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
 
           <div className="text-sm">
+
             <p className="font-bold">
               Request Sent
             </p>
@@ -491,9 +665,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             <p>
               {successMsg}
             </p>
+
           </div>
 
         </div>
+
       )}
 
       {/* ======================================================
@@ -521,9 +697,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             <div className="flex items-center justify-center gap-3 text-3xl sm:text-4xl font-black text-purple-950 mt-2">
 
               <span className="p-3 rounded-2xl bg-purple-100 text-purple-900">
+
                 {getDestinationIcon(
                   myActivePass.destination
                 )}
+
               </span>
 
               <span>
@@ -533,9 +711,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             </div>
 
             {myActivePass.destinationDetails && (
+
               <p className="text-slate-600 font-medium italic text-sm mt-2">
+
                 "{myActivePass.destinationDetails}"
+
               </p>
+
             )}
 
           </div>
@@ -563,14 +745,17 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               Started at{' '}
 
               <span className="font-semibold text-slate-700">
+
                 {formatTimeAmPm(
                   myActivePass.timeOut
                 )}
+
               </span>
 
             </div>
 
             {urgency && (
+
               <div className="pt-3">
 
                 <span
@@ -580,6 +765,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 </span>
 
               </div>
+
             )}
 
           </div>
@@ -599,10 +785,6 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         </div>
 
       ) : pendingRequest ? (
-
-        /* ====================================================
-           PENDING REQUEST
-           ==================================================== */
 
         <div className="bg-white rounded-2xl shadow-xl border-2 border-blue-300 p-6 sm:p-8 text-center space-y-6">
 
@@ -646,6 +828,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             </div>
 
             {pendingRequest.destinationDetails && (
+
               <div>
 
                 <span className="text-xs font-bold text-slate-500 uppercase">
@@ -657,6 +840,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 </p>
 
               </div>
+
             )}
 
           </div>
@@ -672,10 +856,6 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         </div>
 
       ) : (
-
-        /* ====================================================
-           REQUEST FORM
-           ==================================================== */
 
         <div className="bg-white rounded-2xl shadow-xl border border-purple-100 p-6 sm:p-8 space-y-6">
 
@@ -708,8 +888,6 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               className="space-y-6"
             >
 
-              {/* DESTINATION */}
-
               <div>
 
                 <label className="block text-sm font-bold text-slate-800 mb-2">
@@ -726,6 +904,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                         destination.name;
 
                       return (
+
                         <button
                           key={destination.name}
                           type="button"
@@ -766,6 +945,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           </div>
 
                         </button>
+
                       );
                     }
                   )}
@@ -773,8 +953,6 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 </div>
 
               </div>
-
-              {/* REASON */}
 
               <div>
 
@@ -803,8 +981,6 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
               </div>
 
-              {/* SUBMIT */}
-
               <button
                 id="btn-submit-hall-pass"
                 type="submit"
@@ -815,9 +991,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 <Send className="w-5 h-5 text-amber-300" />
 
                 <span>
+
                   {isSubmitting
                     ? 'SENDING REQUEST...'
                     : 'REQUEST HALL PASS'}
+
                 </span>
 
               </button>
@@ -878,9 +1056,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   <div className="flex items-center gap-3">
 
                     <div className="p-2 rounded-lg bg-purple-50 text-purple-900">
+
                       {getDestinationIcon(
                         pass.destination
                       )}
+
                     </div>
 
                     <div>
@@ -890,16 +1070,23 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                       </span>
 
                       <span className="text-slate-500 text-xs block">
+
                         {new Date(
                           pass.timeOut
-                        ).toLocaleDateString([], {
-                          month: 'short',
-                          day: 'numeric'
-                        })}{' '}
+                        ).toLocaleDateString(
+                          [],
+                          {
+                            month: 'short',
+                            day: 'numeric'
+                          }
+                        )}{' '}
+
                         at{' '}
+
                         {formatTimeAmPm(
                           pass.timeOut
                         )}
+
                       </span>
 
                     </div>
@@ -913,9 +1100,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                         : 'bg-slate-100 text-slate-700'
                     }`}
                   >
+
                     {pass.status === 'ACTIVE'
                       ? 'Out Now'
                       : `${pass.durationMinutes || 1} min`}
+
                   </span>
 
                 </div>
