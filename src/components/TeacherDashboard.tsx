@@ -740,200 +740,192 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     const isPast =
       request.requestDate < todayString;
 
+    const rowTint =
+      request.status === 'COMPLETED'
+        ? 'bg-emerald-50/60'
+        : request.status === 'CANCELLED'
+        ? 'bg-slate-50'
+        : request.status === 'ACCEPTED'
+        ? 'bg-blue-50/60'
+        : isPast
+        ? 'bg-rose-50/60'
+        : isToday
+        ? 'bg-amber-50/60'
+        : '';
+
     return (
       <div
         key={request.id}
-        className={`rounded-xl border-2 p-4 shadow-sm ${
-          request.status === 'COMPLETED'
-            ? 'bg-emerald-50 border-emerald-200'
-            : request.status === 'CANCELLED'
-            ? 'bg-slate-50 border-slate-200'
-            : request.status === 'ACCEPTED'
-            ? 'bg-blue-50 border-blue-300'
-            : isPast
-            ? 'bg-rose-50 border-rose-300'
-            : isToday
-            ? 'bg-amber-50 border-amber-300'
-            : 'bg-white border-purple-200'
-        }`}
+        className={`grid grid-cols-1 lg:grid-cols-[2fr_1.3fr_2fr_auto] gap-3 lg:gap-4 items-center px-4 sm:px-5 py-4 ${rowTint}`}
       >
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
 
-          <div className="flex items-start gap-3 min-w-0">
-
-            <div className="w-10 h-10 rounded-xl bg-purple-950 text-amber-300 font-black flex items-center justify-center shrink-0">
-              {request.studentName
-                .split(' ')
-                .map((name) => name[0])
-                .join('')
-                .slice(0, 2)}
+        {/* Student */}
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 shrink-0 rounded-xl bg-purple-950 text-amber-300 font-black text-sm flex items-center justify-center shadow">
+            {request.studentName
+              .split(' ')
+              .map((name) => name[0])
+              .join('')
+              .slice(0, 2)}
+          </div>
+          <div className="min-w-0">
+            <div className="font-bold text-sm sm:text-base text-slate-900 truncate">
+              {request.studentName}
             </div>
-
-            <div className="min-w-0">
-
-              <h4 className="font-extrabold text-slate-900">
-                {request.studentName}
-              </h4>
-
-              <div className="text-xs text-slate-500 mt-0.5">
-                ID #{request.studentId}
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 mt-2">
-
-                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-purple-100 text-purple-900 text-xs font-bold">
-                  <CalendarDays className="w-3 h-3" />
-                  {request.requestDate}
-                </span>
-
-                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-bold">
-                  <Clock className="w-3 h-3" />
-                  {request.period === 'Polar Time'
-                    ? 'Polar Time'
-                    : `Period ${request.period}`}
-                </span>
-
-              </div>
-
-              {isIncoming && (
-                <p className="text-xs text-slate-600 mt-2">
-                  <strong>
-                    Requested by:
-                  </strong>{' '}
-                  {request.requestingTeacher}
-
-                  {request.requestingTeacherRoom
-                    ? ` • ${request.requestingTeacherRoom}`
-                    : ''}
-                </p>
-              )}
-
-              {isOutgoing && (
-                <p className="text-xs text-slate-600 mt-2">
-                  <strong>
-                    Requested from:
-                  </strong>{' '}
-                  {request.receivingTeacher}
-
-                  {request.receivingTeacherRoom
-                    ? ` • ${request.receivingTeacherRoom}`
-                    : ''}
-                </p>
-              )}
-
-              {request.reason && (
-                <p className="text-xs text-slate-600 mt-2">
-                  <strong>Reason:</strong>{' '}
-                  {request.reason}
-                </p>
-              )}
-
-              {request.notes && (
-                <p className="text-xs text-slate-500 mt-1">
-                  <strong>Notes:</strong>{' '}
-                  {request.notes}
-                </p>
-              )}
-
+            <div className="text-xs text-slate-500 font-mono">
+              ID #{request.studentId}
             </div>
           </div>
+        </div>
 
-          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+        {/* When */}
+        <div className="min-w-0">
+          <div className="text-[10px] uppercase tracking-wider font-bold text-slate-400 lg:hidden">
+            When
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-purple-100 text-purple-900 text-xs font-bold whitespace-nowrap">
+              <CalendarDays className="w-3 h-3" />
+              {request.requestDate}
+            </span>
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-bold whitespace-nowrap">
+              <Clock className="w-3 h-3" />
+              {request.period === 'Polar Time'
+                ? 'Polar Time'
+                : `Period ${request.period}`}
+            </span>
+          </div>
+        </div>
 
-            {request.status === 'PENDING' &&
-              isIncoming && (
-                <>
-                  <span
-                    className={`px-2.5 py-1 rounded-full text-xs font-bold ${
-                      isPast
-                        ? 'bg-rose-100 text-rose-800'
-                        : isToday
-                        ? 'bg-amber-100 text-amber-800'
-                        : 'bg-purple-100 text-purple-800'
-                    }`}
-                  >
-                    {isPast
-                      ? 'Past Due'
+        {/* Context: who / reason / notes */}
+        <div className="min-w-0">
+          <div className="text-[10px] uppercase tracking-wider font-bold text-slate-400 lg:hidden">
+            Details
+          </div>
+
+          {isIncoming && (
+            <p className="text-xs text-slate-600 truncate">
+              <strong>Requested by:</strong>{' '}
+              {request.requestingTeacher}
+              {request.requestingTeacherRoom
+                ? ` • ${request.requestingTeacherRoom}`
+                : ''}
+            </p>
+          )}
+
+          {isOutgoing && (
+            <p className="text-xs text-slate-600 truncate">
+              <strong>Requested from:</strong>{' '}
+              {request.receivingTeacher}
+              {request.receivingTeacherRoom
+                ? ` • ${request.receivingTeacherRoom}`
+                : ''}
+            </p>
+          )}
+
+          {request.reason && (
+            <p className="text-xs text-slate-600 truncate">
+              <strong>Reason:</strong> {request.reason}
+            </p>
+          )}
+
+          {request.notes && (
+            <p className="text-xs text-slate-500 truncate">
+              <strong>Notes:</strong> {request.notes}
+            </p>
+          )}
+        </div>
+
+        {/* Status / Actions */}
+        <div className="flex items-center justify-start lg:justify-end gap-2 flex-wrap">
+
+          {request.status === 'PENDING' &&
+            isIncoming && (
+              <>
+                <span
+                  className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap ${
+                    isPast
+                      ? 'bg-rose-100 text-rose-800'
                       : isToday
-                      ? 'Today'
-                      : 'Upcoming'}
-                  </span>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleAcceptRequest(request)
-                    }
-                    disabled={isLoading}
-                    className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 disabled:opacity-50"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-
-                    {isLoading
-                      ? 'Accepting...'
-                      : 'Accept'}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleCancelRequest(request)
-                    }
-                    disabled={isLoading}
-                    className="px-3 py-2 rounded-lg bg-slate-100 hover:bg-rose-100 text-rose-700 font-bold text-xs flex items-center gap-1.5 border border-slate-200 disabled:opacity-50"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                    Cancel
-                  </button>
-                </>
-              )}
-
-            {request.status === 'ACCEPTED' &&
-              isOutgoing && (
-                <>
-                  <span className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 text-xs font-bold">
-                    Student On The Way
-                  </span>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleStudentArrived(request)
-                    }
-                    disabled={isLoading}
-                    className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 disabled:opacity-50"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-
-                    {isLoading
-                      ? 'Saving...'
-                      : 'Arrived'}
-                  </button>
-                </>
-              )}
-
-            {request.status === 'ACCEPTED' &&
-              isIncoming && (
-                <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">
-                  Student Out
+                      ? 'bg-amber-100 text-amber-800'
+                      : 'bg-purple-100 text-purple-800'
+                  }`}
+                >
+                  {isPast
+                    ? 'Past Due'
+                    : isToday
+                    ? 'Today'
+                    : 'Upcoming'}
                 </span>
-              )}
 
-            {request.status === 'COMPLETED' && (
-              <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold flex items-center gap-1">
-                <Check className="w-3 h-3" />
-                Completed
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleAcceptRequest(request)
+                  }
+                  disabled={isLoading}
+                  className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 disabled:opacity-50 whitespace-nowrap"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  {isLoading ? 'Accepting...' : 'Accept'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleCancelRequest(request)
+                  }
+                  disabled={isLoading}
+                  className="px-3 py-2 rounded-lg bg-slate-100 hover:bg-rose-100 text-rose-700 font-bold text-xs flex items-center gap-1.5 border border-slate-200 disabled:opacity-50 whitespace-nowrap"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  Cancel
+                </button>
+              </>
+            )}
+
+          {request.status === 'ACCEPTED' &&
+            isOutgoing && (
+              <>
+                <span className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 text-xs font-bold whitespace-nowrap">
+                  Student On The Way
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleStudentArrived(request)
+                  }
+                  disabled={isLoading}
+                  className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 disabled:opacity-50 whitespace-nowrap"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  {isLoading ? 'Saving...' : 'Arrived'}
+                </button>
+              </>
+            )}
+
+          {request.status === 'ACCEPTED' &&
+            isIncoming && (
+              <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-bold whitespace-nowrap">
+                Student Out
               </span>
             )}
 
-            {request.status === 'CANCELLED' && (
-              <span className="px-2.5 py-1 rounded-full bg-slate-200 text-slate-600 text-xs font-bold flex items-center gap-1">
-                <X className="w-3 h-3" />
-                Cancelled
-              </span>
-            )}
+          {request.status === 'COMPLETED' && (
+            <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold flex items-center gap-1 whitespace-nowrap">
+              <Check className="w-3 h-3" />
+              Completed
+            </span>
+          )}
 
-          </div>
+          {request.status === 'CANCELLED' && (
+            <span className="px-2.5 py-1 rounded-full bg-slate-200 text-slate-600 text-xs font-bold flex items-center gap-1 whitespace-nowrap">
+              <X className="w-3 h-3" />
+              Cancelled
+            </span>
+          )}
+
         </div>
       </div>
     );
@@ -1034,6 +1026,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             </div>
           )}
 
+          {/* Row Header */}
+          <div className="hidden lg:grid grid-cols-[2fr_2fr_auto] gap-4 items-center px-5 py-2.5 bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
+            <div>Student</div>
+            <div>Destination</div>
+            <div className="text-right">Actions</div>
+          </div>
+
           <div className="divide-y divide-slate-100">
             {incomingPassRequests.map((request) => {
               const isActing = passRequestActionLoadingId === request.id;
@@ -1041,37 +1040,60 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               return (
                 <div
                   key={request.id}
-                  className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  className="grid grid-cols-1 lg:grid-cols-[2fr_2fr_auto] gap-3 lg:gap-4 items-center px-4 sm:px-5 py-4"
                 >
-                  <div>
-                    <div className="font-bold text-slate-900">
-                      {request.studentName}
+                  {/* Student */}
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 shrink-0 rounded-xl bg-purple-950 text-amber-300 font-black text-sm flex items-center justify-center shadow">
+                      {request.studentName
+                        .split(' ')
+                        .map((n) => n[0])
+                        .join('')
+                        .slice(0, 2)}
                     </div>
-                    <div className="text-xs text-slate-500 mt-0.5">
-                      Wants to go to <span className="font-semibold text-purple-900">{request.destination}</span>
-                      {request.destinationDetails && (
-                        <span> — "{request.destinationDetails}"</span>
-                      )}
+                    <div className="min-w-0">
+                      <div className="font-bold text-sm sm:text-base text-slate-900 truncate">
+                        {request.studentName}
+                      </div>
+                      <div className="text-xs text-slate-500 font-mono">
+                        ID #{request.studentId}
+                      </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  {/* Destination */}
+                  <div className="min-w-0">
+                    <div className="text-[10px] uppercase tracking-wider font-bold text-slate-400 lg:hidden">
+                      Destination
+                    </div>
+                    <div className="text-sm font-semibold text-purple-950 truncate">
+                      {request.destination}
+                    </div>
+                    {request.destinationDetails && (
+                      <div className="text-xs text-slate-500 italic truncate">
+                        "{request.destinationDetails}"
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center justify-start lg:justify-end gap-2">
                     <button
                       type="button"
                       disabled={isActing}
                       onClick={() => handleDenyPassRequest(request.id)}
-                      className="px-4 py-2 rounded-xl bg-rose-100 hover:bg-rose-200 text-rose-800 font-bold text-sm flex items-center gap-1.5 disabled:opacity-50"
+                      className="px-4 py-2 rounded-xl bg-rose-100 hover:bg-rose-200 text-rose-800 font-bold text-xs flex items-center gap-1.5 disabled:opacity-50 whitespace-nowrap"
                     >
-                      <X className="w-4 h-4" />
+                      <X className="w-3.5 h-3.5" />
                       Deny
                     </button>
                     <button
                       type="button"
                       disabled={isActing}
                       onClick={() => handleApprovePassRequest(request.id)}
-                      className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-sm flex items-center gap-1.5 disabled:opacity-50"
+                      className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-xs flex items-center gap-1.5 disabled:opacity-50 whitespace-nowrap"
                     >
-                      <Check className="w-4 h-4" />
+                      <Check className="w-3.5 h-3.5" />
                       {isActing ? 'Approving...' : 'Approve'}
                     </button>
                   </div>
@@ -1506,12 +1528,18 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
           ) : (
 
-            <div className="space-y-2">
-
-              {incomingPendingRequests.map(
-                renderRequestCard
-              )}
-
+            <div className="rounded-xl border border-slate-200 overflow-hidden">
+              <div className="hidden lg:grid grid-cols-[2fr_1.3fr_2fr_auto] gap-4 items-center px-5 py-2.5 bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
+                <div>Student</div>
+                <div>When</div>
+                <div>Details</div>
+                <div className="text-right">Actions</div>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {incomingPendingRequests.map(
+                  renderRequestCard
+                )}
+              </div>
             </div>
 
           )}
@@ -1548,12 +1576,18 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
           ) : (
 
-            <div className="space-y-2">
-
-              {awaitingStudentArrival.map(
-                renderRequestCard
-              )}
-
+            <div className="rounded-xl border border-slate-200 overflow-hidden">
+              <div className="hidden lg:grid grid-cols-[2fr_1.3fr_2fr_auto] gap-4 items-center px-5 py-2.5 bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
+                <div>Student</div>
+                <div>When</div>
+                <div>Details</div>
+                <div className="text-right">Actions</div>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {awaitingStudentArrival.map(
+                  renderRequestCard
+                )}
+              </div>
             </div>
 
           )}
@@ -1590,12 +1624,18 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
           ) : (
 
-            <div className="space-y-2">
-
-              {incomingAcceptedRequests.map(
-                renderRequestCard
-              )}
-
+            <div className="rounded-xl border border-slate-200 overflow-hidden">
+              <div className="hidden lg:grid grid-cols-[2fr_1.3fr_2fr_auto] gap-4 items-center px-5 py-2.5 bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
+                <div>Student</div>
+                <div>When</div>
+                <div>Details</div>
+                <div className="text-right">Actions</div>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {incomingAcceptedRequests.map(
+                  renderRequestCard
+                )}
+              </div>
             </div>
 
           )}
@@ -1640,12 +1680,18 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
             </summary>
 
-            <div className="mt-3 space-y-3">
-
-              {requestHistory.map(
-                renderRequestCard
-              )}
-
+            <div className="mt-3 rounded-xl border border-slate-200 overflow-hidden">
+              <div className="hidden lg:grid grid-cols-[2fr_1.3fr_2fr_auto] gap-4 items-center px-5 py-2.5 bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
+                <div>Student</div>
+                <div>When</div>
+                <div>Details</div>
+                <div className="text-right">Status</div>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {requestHistory.map(
+                  renderRequestCard
+                )}
+              </div>
             </div>
 
           </details>
