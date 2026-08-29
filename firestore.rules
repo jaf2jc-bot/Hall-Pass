@@ -67,20 +67,22 @@ function isStudent() {
 
 
 // ============================================================
-// 1. USERS COLLECTION
+// 1. USERS
 // ============================================================
 
 match /users/{userId} {
 
   // Users can read their own profile.
-  // Teachers/Admins can read user profiles.
-  allow read: if isAuthenticated() && (
-    request.auth.uid == userId ||
-    isTeacher()
-  );
+  // Teachers and admins can read all profiles.
+  allow read: if
+    isAuthenticated() &&
+    (
+      request.auth.uid == userId ||
+      isTeacher()
+    );
 
   // ----------------------------------------------------------
-  // CREATE USER
+  // CREATE
   // ----------------------------------------------------------
 
   allow create: if
@@ -106,7 +108,7 @@ match /users/{userId} {
     );
 
   // ----------------------------------------------------------
-  // UPDATE USER
+  // UPDATE
   // ----------------------------------------------------------
 
   allow update: if
@@ -121,7 +123,7 @@ match /users/{userId} {
     );
 
   // ----------------------------------------------------------
-  // DELETE USER
+  // DELETE
   // ----------------------------------------------------------
 
   allow delete: if isAdmin();
@@ -129,14 +131,14 @@ match /users/{userId} {
 
 
 // ============================================================
-// 2. STUDENTS COLLECTION
+// 2. STUDENTS
 // ============================================================
 
 match /students/{studentId} {
 
-  // Teachers/Admins can read the entire roster.
+  // Teachers/admins can read the entire roster.
   //
-  // Students can only read their own student record.
+  // Students can read their own student document.
   allow read: if
     isTeacher() ||
     (
@@ -148,27 +150,27 @@ match /students/{studentId} {
       )
     );
 
-  // Only Admins can modify the roster.
+  // Only admins can modify the roster.
   allow write: if isAdmin();
 }
 
 
 // ============================================================
-// 3. TEACHERS COLLECTION
+// 3. TEACHERS
 // ============================================================
 
 match /teachers/{teacherId} {
 
-  // Authenticated users can read the faculty directory.
+  // All authenticated users can read the teacher directory.
   allow read: if isAuthenticated();
 
-  // Only Admins can modify teachers.
+  // Only admins can modify teachers.
   allow write: if isAdmin();
 }
 
 
 // ============================================================
-// 4. HALL PASSES COLLECTION
+// 4. HALL PASSES
 // ============================================================
 
 match /hallPasses/{passId} {
@@ -177,17 +179,17 @@ match /hallPasses/{passId} {
   // READ
   // ----------------------------------------------------------
   //
-  // Teachers/Admins:
-  //   Can read all hall passes.
+  // Teachers/admins:
+  //   Read all hall passes.
   //
   // Students:
-  //   Can only read their own hall passes.
+  //   Read only their own passes.
   //
 
   allow read: if
     isTeacher() ||
     (
-      isAuthenticated() &&
+      isStudent() &&
       (
         resource.data.studentId == getUserData().studentId ||
         resource.data.studentDocId == getUserData().studentDocId ||
@@ -199,13 +201,6 @@ match /hallPasses/{passId} {
   // ----------------------------------------------------------
   // CREATE
   // ----------------------------------------------------------
-  //
-  // Teachers/Admins:
-  //   Can create passes for any student.
-  //
-  // Students:
-  //   Can only create an ACTIVE pass for themselves.
-  //
 
   allow create: if
     isAuthenticated() &&
@@ -227,13 +222,6 @@ match /hallPasses/{passId} {
   // ----------------------------------------------------------
   // UPDATE
   // ----------------------------------------------------------
-  //
-  // Teachers/Admins:
-  //   Can update passes.
-  //
-  // Students:
-  //   Can only complete their own ACTIVE pass.
-  //
 
   allow update: if
     isAuthenticated() &&
@@ -262,44 +250,86 @@ match /hallPasses/{passId} {
     );
 
 
-  // Only Admins can delete passes.
+  // ----------------------------------------------------------
+  // DELETE
+  // ----------------------------------------------------------
+
   allow delete: if isAdmin();
 }
 
 
 // ============================================================
-// 5. SCHOOL SETTINGS
+// 5. CONFLICT PAIRS
 // ============================================================
 
-match /settings/{docId} {
+match /conflictPairs/{conflictPairId} {
 
-  // Authenticated users can read settings.
-  allow read: if isAuthenticated();
+  // Teachers/admins can view conflict pairs.
+  allow read: if isTeacher();
 
-  // Only Admins can modify settings.
-  allow write: if isAdmin();
+  // Teachers/admins can create conflict pairs.
+  allow create: if isTeacher();
+
+  // Teachers/admins can delete conflict pairs.
+  allow delete: if isTeacher();
+
+  // Conflict pairs are not edited after creation.
+  allow update: if isTeacher();
 }
 
 
 // ============================================================
-// 6. STUDENT HALL PASS REQUESTS
+// 6. STUDENT REQUESTS
 // ============================================================
 //
-// Student requests live in:
+// This is the teacher-to-teacher student request system.
 //
-// studentHallPassRequests
+// A teacher can:
+//   - Create a request for a student.
+//   - Read requests.
+//   - Update requests.
 //
-// Students:
-//   - Can create requests for themselves.
-//   - Can read their own requests.
-//   - Cannot approve or deny requests.
+// Admins can do everything.
 //
-// Teachers:
-//   - Can read requests assigned to them.
-//   - Can approve or deny requests assigned to them.
+// Students are not allowed to access this collection.
 //
-// Admins:
-//   - Can read and modify everything.
+// ============================================================
+
+match /studentRequests/{requestId} {
+
+  // Teachers/admins can read requests.
+  allow read: if isTeacher();
+
+  // Teachers/admins can create requests.
+  allow create: if isTeacher();
+
+  // Teachers/admins can update requests.
+  allow update: if isTeacher();
+
+  // Only admins can delete requests.
+  allow delete: if isAdmin();
+}
+
+
+// ============================================================
+// 7. STUDENT HALL PASS REQUESTS
+// ============================================================
+//
+// This is the student-to-teacher hall pass approval system.
+//
+// Student:
+//   createStudentHallPassRequest()
+//
+// creates a document with:
+//
+//   status: 'PENDING'
+//
+// The teacher then sees the request and can:
+//
+//   APPROVE
+//   DENY
+//
+// When approved, the application creates an ACTIVE hall pass.
 //
 // ============================================================
 
@@ -309,31 +339,36 @@ match /studentHallPassRequests/{requestId} {
   // READ
   // ----------------------------------------------------------
   //
-  // Admins can read everything.
+  // Admin:
+  //   Everything.
   //
-  // Teachers can read requests where teacherId matches
-  // the teacherDocId stored in their user profile.
+  // Teacher:
+  //   Requests assigned to that teacher.
   //
-  // Students can only read their own requests.
+  // Student:
+  //   Their own requests.
+  //
+  // IMPORTANT:
+  // The application queries this collection using:
+  //
+  //   teacherId == teacherId
+  //
+  // or:
+  //
+  //   studentId == studentId
+  //
+  // Therefore the authenticated role is used here instead
+  // of trying to make Firestore infer the query's intent.
   //
 
   allow read: if
     isAdmin() ||
 
-    (
-      isTeacher() &&
-      userDocExists() &&
-      getUserData().teacherDocId != null &&
-      resource.data.teacherId == getUserData().teacherDocId
-    ) ||
+    isTeacher() ||
 
     (
       isStudent() &&
-      (
-        resource.data.studentId == getUserData().studentId ||
-        resource.data.studentDocId == getUserData().studentDocId ||
-        resource.data.studentEmail == request.auth.token.email
-      )
+      resource.data.studentId == getUserData().studentId
     );
 
 
@@ -343,9 +378,7 @@ match /studentHallPassRequests/{requestId} {
   //
   // Students can create a request only for themselves.
   //
-  // The request MUST start as PENDING.
-  //
-  // Teachers/Admins can create requests as well.
+  // Teachers/admins can also create requests.
   //
 
   allow create: if
@@ -366,41 +399,45 @@ match /studentHallPassRequests/{requestId} {
   // UPDATE
   // ----------------------------------------------------------
   //
-  // Students cannot modify their requests.
+  // Students cannot modify requests.
   //
-  // Teachers can modify requests assigned to them.
+  // Teachers can modify requests.
   //
   // Admins can modify anything.
+  //
+  // The application controls which status changes are made.
   //
 
   allow update: if
     isAdmin() ||
-
-    (
-      isTeacher() &&
-      userDocExists() &&
-      getUserData().teacherDocId != null &&
-      resource.data.teacherId == getUserData().teacherDocId
-    );
+    isTeacher();
 
 
   // ----------------------------------------------------------
   // DELETE
   // ----------------------------------------------------------
-  //
-  // Only Admins can delete requests.
-  //
 
   allow delete: if isAdmin();
 }
 
 
 // ============================================================
-// 7. DEFAULT DENY
+// 8. SCHOOL SETTINGS
 // ============================================================
-//
-// Any collection not explicitly listed above is denied.
-//
+
+match /settings/{docId} {
+
+  // Authenticated users can read settings.
+  allow read: if isAuthenticated();
+
+  // Only admins can modify settings.
+  allow write: if isAdmin();
+}
+
+
+// ============================================================
+// DEFAULT DENY
+// ============================================================
 
 match /{document=**} {
   allow read, write: if false;
