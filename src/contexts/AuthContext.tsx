@@ -16,7 +16,10 @@ import {
   auth,
   signInWithGoogle,
   signOutFromApp,
-  provisionUserProfile,
+  getUserProfile,
+  saveUserProfile,
+  getTeacherByEmail,
+  attachTeacherUid,
   subscribeToStudents,
   subscribeToTeachers,
   subscribeToUserProfiles,
@@ -37,6 +40,8 @@ interface AuthContextType {
   currentUser: UserProfile | null;
 
   currentRole: UserRole | null;
+
+  setRole: (role: UserRole) => void;
 
   students: Student[];
 
@@ -59,6 +64,12 @@ interface AuthContextType {
   selectStudent: (student: Student) => void;
 
   selectTeacher: (teacher: Teacher) => void;
+
+  loginAsAdmin: () => void;
+
+  loginAsStudentById: (
+    studentId: string
+  ) => boolean;
 
   logout: () => Promise<void>;
 
@@ -269,30 +280,48 @@ export const AuthProvider: React.FC<{
 
 
         // --------------------------------------------------------
-        // CHECK EMAIL DOMAIN (fast client-side pre-check for UX only)
+        // CHECK EMAIL
         // --------------------------------------------------------
-        //
-        // This is NOT the real security boundary — it just avoids an
-        // unnecessary round trip for obviously-wrong accounts. The
-        // provisionUserProfile Cloud Function re-checks the domain
-        // (and the full roster) server-side, and that's what actually
-        // decides the user's role. The client can no longer assign
-        // its own role or write directly to /users/{uid}.
 
-        const email = (user.email || '').trim();
-        const emailLower = email.toLowerCase();
-        const emailDomain = emailLower.split('@')[1];
+        const email =
+          (
+            user.email ||
+            ''
+          ).trim();
 
-        if (emailDomain && emailDomain !== ALLOWED_DOMAIN.toLowerCase()) {
+        const emailLower =
+          email.toLowerCase();
+
+        const emailDomain =
+          email.split('@')[1]?.toLowerCase();
+
+
+        const isAuthorizedDomain =
+          emailDomain ===
+            ALLOWED_DOMAIN.toLowerCase() ||
+          emailLower ===
+            'jaf2jc@bearworks.jackson.sparcc.org';
+
+
+        if (
+          !isAuthorizedDomain &&
+          emailDomain
+        ) {
+
           setAuthError(
             `Access restricted: Please sign in with your Jackson Memorial Middle School account (@${ALLOWED_DOMAIN}).`
           );
+
           await signOutFromApp();
+
           setIsLoading(false);
+
           return;
         }
 
+
         setAuthError(null);
+
 
         // --------------------------------------------------------
         // START SCHOOL DATA LISTENERS
@@ -300,36 +329,325 @@ export const AuthProvider: React.FC<{
 
         startRosterSubscriptions();
 
+
         // --------------------------------------------------------
-        // PROVISION USER PROFILE (server-side)
+        // GET EXISTING USER PROFILE
         // --------------------------------------------------------
-        //
-        // Replaces all the old client-side role-detection/write logic.
-        // The Cloud Function looks the user up in the students/teachers
-        // roster (or the admin allowlist) and writes their /users/{uid}
-        // doc itself, using the Admin SDK. If no roster match exists,
-        // it throws and the user is signed back out below.
 
-        let profile: UserProfile;
-
-        try {
-          profile = await provisionUserProfile();
-        } catch (err: unknown) {
-          const error = err as Error;
-
-          console.error(
-            '[AuthContext] Failed to provision user profile:',
-            error
+        let profile =
+          await getUserProfile(
+            user.uid
           );
 
-          setAuthError(
-            error.message ||
-            'Your account could not be set up. Please contact the school office.'
+
+        // ========================================================
+        // ADMIN ACCOUNT
+        // ========================================================
+
+        const isAdminAccount =
+          emailLower ===
+            'jaf2jc@bearworks.jackson.sparcc.org' ||
+          emailLower.includes('admin') ||
+          emailLower.startsWith('principal');
+
+
+        if (
+          isAdminAccount
+        ) {
+
+          profile = {
+
+            uid:
+              user.uid,
+
+            email:
+              email,
+
+            displayName:
+              user.displayName ||
+              email.split('@')[0] ||
+              'JMMS Administrator',
+
+            photoURL:
+              user.photoURL ||
+              undefined,
+
+            role:
+              'admin',
+
+            room:
+              'Main Administrative Office'
+          };
+
+
+          await saveUserProfile(
+            profile
+          );
+        }
+
+
+        // ========================================================
+        // EXISTING USER
+        // ========================================================
+
+        else if (
+          profile
+        ) {
+
+          /*
+           * IMPORTANT:
+           *
+           * If the user already exists but their role is
+           * missing or incorrect, we still check the teacher
+           * roster by EMAIL.
+           *
+           * This is what fixes the situation where a teacher
+           * previously became a normal user/student.
+           */
+
+          const matchingTeacher =
+            await getTeacherByEmail(
+              emailLower
+            );
+
+
+          if (
+            matchingTeacher
+          ) {
+
+            console.log(
+              '[AuthContext] Teacher found by email:',
+              matchingTeacher.name
+            );
+
+
+            /*
+             * Attach Firebase UID to the teacher record.
+             */
+
+            await attachTeacherUid(
+              matchingTeacher.id,
+              user.uid
+            );
+
+
+            /*
+             * Upgrade the user's role to teacher.
+             */
+
+            profile = {
+
+              ...profile,
+
+              uid:
+                user.uid,
+
+              email:
+                email,
+
+              displayName:
+                profile.displayName ||
+                matchingTeacher.name,
+
+              role:
+                'teacher',
+
+              teacherDocId:
+                matchingTeacher.id,
+
+              room:
+                matchingTeacher.room
+            };
+
+
+            await saveUserProfile(
+              profile
+            );
+          }
+        }
+
+
+        // ========================================================
+        // NEW USER
+        // ========================================================
+
+        else {
+
+          let role:
+            UserRole = 'student';
+
+          let studentId:
+            string | undefined;
+
+          let studentDocId:
+            string | undefined;
+
+          let teacherDocId:
+            string | undefined;
+
+          let room:
+            string | undefined;
+
+          let grade:
+            number | undefined;
+
+
+          // ------------------------------------------------------
+          // CHECK TEACHER BY EMAIL
+          // ------------------------------------------------------
+
+          const matchingTeacher =
+            await getTeacherByEmail(
+              emailLower
+            );
+
+
+          if (
+            matchingTeacher
+          ) {
+
+            console.log(
+              '[AuthContext] NEW USER IS A TEACHER:',
+              matchingTeacher.name
+            );
+
+
+            role =
+              'teacher';
+
+            teacherDocId =
+              matchingTeacher.id;
+
+            room =
+              matchingTeacher.room;
+
+
+            /*
+             * Save Firebase UID directly to teacher record.
+             */
+
+            await attachTeacherUid(
+              matchingTeacher.id,
+              user.uid
+            );
+          }
+
+
+          // ------------------------------------------------------
+          // CHECK STUDENT BY EMAIL
+          // ------------------------------------------------------
+
+          const matchingStudent =
+            students.find(
+              (student) =>
+                student.email &&
+                student.email
+                  .toLowerCase() ===
+                  emailLower
+            );
+
+
+          /*
+           * Only use student if the person was NOT identified
+           * as a teacher.
+           *
+           * This prevents an account from being accidentally
+           * changed from teacher to student.
+           */
+
+          if (
+            matchingStudent &&
+            role !== 'teacher'
+          ) {
+
+            console.log(
+              '[AuthContext] NEW USER IS A STUDENT:',
+              matchingStudent.firstName,
+              matchingStudent.lastName
+            );
+
+
+            role =
+              'student';
+
+            studentId =
+              matchingStudent.studentId;
+
+            studentDocId =
+              matchingStudent.id;
+
+            grade =
+              matchingStudent.grade;
+
+            room =
+              matchingStudent.homeroom;
+          }
+
+
+          // ------------------------------------------------------
+          // CREATE USER PROFILE
+          // ------------------------------------------------------
+
+          profile = {
+
+            uid:
+              user.uid,
+
+            email:
+              email,
+
+            displayName:
+              user.displayName ||
+              email.split('@')[0] ||
+              'JMMS User',
+
+            photoURL:
+              user.photoURL ||
+              undefined,
+
+            role,
+
+            ...(studentId
+              ? {
+                  studentId
+                }
+              : {}),
+
+            ...(studentDocId
+              ? {
+                  studentDocId
+                }
+              : {}),
+
+            ...(teacherDocId
+              ? {
+                  teacherDocId
+                }
+              : {}),
+
+            ...(grade !== undefined
+              ? {
+                  grade
+                }
+              : {}),
+
+            ...(room
+              ? {
+                  room
+                }
+              : {})
+          };
+
+
+          console.log(
+            '[AuthContext] Creating user profile:',
+            profile
           );
 
-          await signOutFromApp();
-          setIsLoading(false);
-          return;
+
+          await saveUserProfile(
+            profile
+          );
         }
 
 
@@ -706,6 +1024,201 @@ export const AuthProvider: React.FC<{
     };
 
 
+  // ============================================================
+  // LOGIN AS ADMIN
+  // ============================================================
+
+  const loginAsAdmin =
+    () => {
+
+      setCurrentRole(
+        'admin'
+      );
+
+
+      const profile:
+        UserProfile = {
+
+        uid:
+          firebaseUser
+            ? firebaseUser.uid
+            : 'admin-jmms-principal',
+
+        email:
+          firebaseUser?.email ||
+          'admin@bearworks.jackson.sparcc.org',
+
+        displayName:
+          firebaseUser?.displayName ||
+          'Principal / Admin Office',
+
+        photoURL:
+          firebaseUser?.photoURL ||
+          undefined,
+
+        role:
+          'admin',
+
+        room:
+          'Main Office'
+      };
+
+
+      setCurrentUser(
+        profile
+      );
+
+
+      setActiveTeacher({
+
+        id:
+          profile.uid,
+
+        name:
+          profile.displayName,
+
+        room:
+          profile.room ||
+          'Main Office',
+
+        subject:
+          'Administration',
+
+        email:
+          profile.email,
+
+        active:
+          true,
+
+        department:
+          'Administration'
+      });
+
+
+      if (
+        firebaseUser
+      ) {
+
+        saveUserProfile(
+          profile
+        ).catch(
+          console.error
+        );
+      }
+    };
+
+
+  // ============================================================
+  // LOGIN AS STUDENT BY ID
+  // ============================================================
+
+  const loginAsStudentById =
+    (
+      studentId: string
+    ): boolean => {
+
+      const cleanId =
+        studentId.trim();
+
+
+      const found =
+        students.find(
+          (student) =>
+            student.studentId ===
+            cleanId
+        );
+
+
+      if (
+        found
+      ) {
+
+        selectStudent(
+          found
+        );
+
+        return true;
+      }
+
+
+      return false;
+    };
+
+
+  // ============================================================
+  // SET ROLE
+  // ============================================================
+
+  const setRole =
+    (
+      role: UserRole
+    ) => {
+
+      setCurrentRole(
+        role
+      );
+
+
+      if (
+        role === 'admin'
+      ) {
+
+        loginAsAdmin();
+
+        return;
+      }
+
+
+      if (
+        role === 'teacher'
+      ) {
+
+        if (
+          activeTeacher
+        ) {
+
+          setActiveTeacher(
+            activeTeacher
+          );
+
+        } else if (
+          teachers.length > 0
+        ) {
+
+          setActiveTeacher(
+            teachers[0]
+          );
+        }
+
+        return;
+      }
+
+
+      if (
+        role === 'student'
+      ) {
+
+        if (
+          activeStudent
+        ) {
+
+          setActiveStudent(
+            activeStudent
+          );
+
+        } else if (
+          students.length > 0
+        ) {
+
+          setActiveStudent(
+            students[0]
+          );
+        }
+
+        return;
+      }
+    };
+
 
   // ============================================================
   // LOGOUT
@@ -778,6 +1291,8 @@ export const AuthProvider: React.FC<{
 
         currentRole,
 
+        setRole,
+
         students,
 
         teachers,
@@ -799,6 +1314,10 @@ export const AuthProvider: React.FC<{
         selectStudent,
 
         selectTeacher,
+
+        loginAsAdmin,
+
+        loginAsStudentById,
 
         logout,
 
