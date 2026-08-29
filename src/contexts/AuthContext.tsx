@@ -20,8 +20,10 @@ import {
   getUserProfile,
   saveUserProfile,
   getTeacherByEmail,
+  getStudentByEmail,
   attachTeacherUid,
   addTeacher,
+  addStudent,
   subscribeToStudents,
   subscribeToTeachers,
   subscribeToUserProfiles,
@@ -604,15 +606,139 @@ export const AuthProvider: React.FC<{
           // ------------------------------------------------------
           // CHECK STUDENT BY EMAIL
           // ------------------------------------------------------
+          //
+          // Queries Firestore directly (not the local `students`
+          // array) since that array is populated by an async
+          // subscription and may still be empty/stale the very
+          // first time a brand-new user signs in.
+          // ------------------------------------------------------
 
-          const matchingStudent =
-            students.find(
-              (student) =>
-                student.email &&
-                student.email
-                  .toLowerCase() ===
+          let matchingStudent =
+            role !== 'teacher'
+              ? await getStudentByEmail(
                   emailLower
+                )
+              : null;
+
+          // ------------------------------------------------------
+          // SELF-PROVISION A STUDENT RECORD
+          // ------------------------------------------------------
+          //
+          // No manually pre-built roster entry exists for this
+          // person, and they're not a recognized teacher either.
+          // Rather than requiring an admin to hand-enter every
+          // student (160, 1,000, whatever the enrollment is),
+          // auto-create their students doc from what Google
+          // already told us: name and email. Grade/homeroom are
+          // left as placeholders — an admin can correct those
+          // later from the student directory if needed, but the
+          // person is immediately visible and selectable in every
+          // dropdown either way.
+          // ------------------------------------------------------
+
+          if (
+            !matchingStudent &&
+            role !== 'teacher'
+          ) {
+
+            console.log(
+              '[AuthContext] No roster record found. Self-provisioning a student record for:',
+              email
             );
+
+            const nameParts =
+              (
+                user.displayName ||
+                email.split('@')[0] ||
+                'New Student'
+              )
+                .trim()
+                .split(/\s+/);
+
+            const firstName =
+              nameParts[0] ||
+              'New';
+
+            const lastName =
+              nameParts
+                .slice(1)
+                .join(' ') ||
+              'Student';
+
+            // Best-effort human-readable id. Schools that already
+            // put an ID number in front of the "@" in the email
+            // (e.g. 80124@school.org) get that number for free;
+            // otherwise this falls back to the uid so it's always
+            // unique, and an admin can overwrite it later.
+            const emailLocalPart =
+              email.split('@')[0];
+
+            const fallbackStudentId =
+              /^[0-9]+$/.test(
+                emailLocalPart
+              )
+                ? emailLocalPart
+                : user.uid.slice(0, 8).toUpperCase();
+
+            try {
+
+              const newStudentDocId =
+                await addStudent({
+
+                  studentId:
+                    fallbackStudentId,
+
+                  firstName,
+
+                  lastName,
+
+                  grade:
+                    0,
+
+                  active:
+                    true,
+
+                  // Stored lowercased, consistent with every
+                  // other email field/query in this codebase
+                  // (getTeacherByEmail, getStudentByEmail, etc).
+                  // The Firestore rule lowercases its side of
+                  // the comparison to match.
+                  email:
+                    emailLower
+                });
+
+              matchingStudent = {
+
+                id:
+                  newStudentDocId,
+
+                studentId:
+                  fallbackStudentId,
+
+                firstName,
+
+                lastName,
+
+                grade:
+                  0,
+
+                active:
+                  true,
+
+                email:
+                  emailLower
+              };
+
+            } catch (
+              selfProvisionError
+            ) {
+
+              console.error(
+                '[AuthContext] Failed to self-provision student record:',
+                selfProvisionError
+              );
+            }
+          }
 
           if (
             matchingStudent &&
