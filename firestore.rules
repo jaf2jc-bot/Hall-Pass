@@ -39,17 +39,35 @@ service cloud.firestore {
     }
 
     // 1. Users collection (Authentication & Roles)
-    // Role assignment now happens ONLY in the provisionUserProfile Cloud
-    // Function, which uses the Admin SDK and bypasses these rules entirely.
-    // Clients can never create their own user doc or change their role.
     match /users/{userId} {
       allow read: if isAuthenticated() && (request.auth.uid == userId || isTeacher());
-      allow create: if isAdmin();
-      allow update: if isAdmin() || (
-        isAuthenticated() &&
-        request.auth.uid == userId &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL', 'updatedAt'])
-      );
+
+      allow create: if
+        isAdmin() ||
+        (
+          isAuthenticated() &&
+          request.auth.uid == userId &&
+          request.resource.data.role == 'student'
+        ) ||
+        (
+          isAuthenticated() &&
+          request.auth.uid == userId &&
+          request.resource.data.role == 'teacher' &&
+          request.resource.data.teacherDocId != null &&
+          exists(/databases/$(database)/documents/teachers/$(request.resource.data.teacherDocId)) &&
+          get(/databases/$(database)/documents/teachers/$(request.resource.data.teacherDocId)).data.email == request.auth.token.email
+        );
+
+      allow update: if
+        isAdmin() ||
+        (
+          isAuthenticated() &&
+          request.auth.uid == userId &&
+          request.resource.data.role == resource.data.role &&
+          request.resource.data.teacherDocId == resource.data.teacherDocId &&
+          request.resource.data.studentId == resource.data.studentId
+        );
+
       allow delete: if isAdmin();
     }
 
