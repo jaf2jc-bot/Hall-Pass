@@ -22,7 +22,8 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   HallPass,
   DestinationType,
-  StudentHallPassRequest
+  StudentHallPassRequest,
+  Teacher
 } from '../types';
 
 import {
@@ -53,11 +54,15 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const {
     currentUser,
     currentRole,
-    activeStudent
+    activeStudent,
+    teachers
   } = useAuth();
 
   const [selectedDestination, setSelectedDestination] =
     useState<DestinationType>('Restroom');
+
+  const [selectedTeacherId, setSelectedTeacherId] =
+    useState<string>('');
 
   const [destinationDetails, setDestinationDetails] =
     useState('');
@@ -149,6 +154,16 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   }, [activeStudent]);
 
   // ============================================================
+  // DEFAULT SELECTED TEACHER
+  // ============================================================
+
+  useEffect(() => {
+    if (teachers.length > 0 && !selectedTeacherId) {
+      setSelectedTeacherId(teachers[0].id);
+    }
+  }, [teachers, selectedTeacherId]);
+
+  // ============================================================
   // LIVE ACTIVE-PASS TIMER
   // ============================================================
 
@@ -235,6 +250,20 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       return;
     }
 
+    const selectedTeacher =
+      teachers.find(
+        (teacher) => teacher.id === selectedTeacherId
+      );
+
+    if (!selectedTeacher) {
+
+      setErrorMsg(
+        'Please select your current teacher.'
+      );
+
+      return;
+    }
+
     setIsSubmitting(true);
 
     setErrorMsg(null);
@@ -259,12 +288,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           currentUser?.email ||
           '',
 
-        teacherId: '',
+        teacherId:
+          selectedTeacher.id,
 
-        teacherName: '',
+        teacherName:
+          selectedTeacher.name,
 
         teacherRoom:
-          activeStudent.homeroom ||
+          selectedTeacher.room ||
           '',
 
         destination:
@@ -951,6 +982,38 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   )}
 
                 </div>
+
+              </div>
+
+              <div>
+
+                <label className="block text-sm font-bold text-slate-800 mb-1.5">
+                  Who is your current teacher?
+                </label>
+
+                <select
+                  id="select-authorizing-teacher"
+                  value={selectedTeacherId}
+                  onChange={(e) =>
+                    setSelectedTeacherId(e.target.value)
+                  }
+                  required
+                  className="w-full px-3.5 py-3 rounded-xl border-2 border-slate-200 focus:border-purple-700 focus:ring-2 focus:ring-purple-200 outline-none text-sm font-medium text-slate-800 bg-white"
+                >
+
+                  {teachers.length === 0 && (
+                    <option value="">
+                      No teachers found
+                    </option>
+                  )}
+
+                  {teachers.map((teacher) => (
+                    <option key={teacher.id} value={teacher.id}>
+                      {teacher.name} — {teacher.room} ({teacher.subject})
+                    </option>
+                  ))}
+
+                </select>
 
               </div>
 
