@@ -1,13 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  GraduationCap, 
-  Clock, 
-  MapPin, 
-  UserCheck, 
-  ArrowRight, 
-  CheckCircle2, 
-  AlertTriangle, 
-  RotateCcw, 
+import React, { useEffect, useState } from 'react';
+import {
+  GraduationCap,
+  Clock,
+  MapPin,
+  CheckCircle2,
+  AlertTriangle,
   Sparkles,
   Bath,
   Building2,
@@ -15,14 +12,30 @@ import {
   DoorOpen,
   BookOpen,
   HelpCircle,
-  ShieldAlert,
-  Send
+  Send,
+  XCircle
 } from 'lucide-react';
-import confetti from 'canvas-confetti';
+
 import { useAuth } from '../contexts/AuthContext';
-import { HallPass, DestinationType, Teacher } from '../types';
-import { requestHallPass, endHallPass } from '../lib/firebase';
-import { DESTINATIONS, formatElapsedTime, formatTimeAmPm, playNotificationTone, getPassUrgency } from '../lib/constants';
+
+import {
+  HallPass,
+  DestinationType,
+  StudentHallPassRequest
+} from '../types';
+
+import {
+  createStudentHallPassRequest,
+  subscribeToStudentHallPassRequests
+} from '../lib/firebase';
+
+import {
+  DESTINATIONS,
+  formatElapsedTime,
+  formatTimeAmPm,
+  playNotificationTone,
+  getPassUrgency
+} from '../lib/constants';
 
 interface StudentDashboardProps {
   activePasses: HallPass[];
@@ -35,60 +48,148 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   allPasses,
   soundEnabled
 }) => {
-  const { currentUser, activeStudent, students, teachers, selectStudent } = useAuth();
+  const {
+    currentUser,
+    activeStudent
+  } = useAuth();
 
-  // Find if this student has an active pass
-  const myActivePass = activePasses.find(
-    (p) => activeStudent && (p.studentId === activeStudent.studentId || p.studentDocId === activeStudent.id)
-  );
+  const [selectedDestination, setSelectedDestination] =
+    useState<DestinationType>('Restroom');
 
-  // Pass Request Form State
-  const [selectedDestination, setSelectedDestination] = useState<DestinationType>('Restroom');
-  const [selectedTeacherName, setSelectedTeacherName] = useState<string>('');
-  const [destinationDetails, setDestinationDetails] = useState<string>('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [destinationDetails, setDestinationDetails] =
+    useState('');
 
-  // Live timer tick for active pass
+  const [isSubmitting, setIsSubmitting] =
+    useState(false);
+
+  const [errorMsg, setErrorMsg] =
+    useState<string | null>(null);
+
+  const [successMsg, setSuccessMsg] =
+    useState<string | null>(null);
+
+  const [pendingRequest, setPendingRequest] =
+    useState<StudentHallPassRequest | null>(null);
+
+  const [requestLoading, setRequestLoading] =
+    useState(true);
+
   const [, setTick] = useState(0);
+
+  // ============================================================
+  // FIND CURRENT STUDENT'S ACTIVE PASS
+  // ============================================================
+
+  const myActivePass =
+    activePasses.find(
+      (pass) =>
+        activeStudent &&
+        (
+          pass.studentId === activeStudent.studentId ||
+          pass.studentDocId === activeStudent.id
+        )
+    ) || null;
+
+  // ============================================================
+  // LISTEN FOR THIS STUDENT'S PENDING REQUEST
+  // ============================================================
+
+  useEffect(() => {
+    if (!activeStudent) {
+      setPendingRequest(null);
+      setRequestLoading(false);
+      return;
+    }
+
+    setRequestLoading(true);
+
+    const unsubscribe =
+      subscribeToStudentHallPassRequests(
+        activeStudent.studentId,
+        (requests) => {
+          const pending =
+            requests
+              .filter(
+                (request) =>
+                  request.status === 'PENDING'
+              )
+              .sort(
+                (a, b) =>
+                  b.createdAt - a.createdAt
+              )[0] || null;
+
+          setPendingRequest(pending);
+          setRequestLoading(false);
+        }
+      );
+
+    return () => unsubscribe();
+  }, [activeStudent]);
+
+  // ============================================================
+  // LIVE ACTIVE-PASS TIMER
+  // ============================================================
+
   useEffect(() => {
     if (!myActivePass) return;
-    const timer = setInterval(() => setTick((t) => t + 1), 1000);
+
+    const timer =
+      setInterval(
+        () => setTick((value) => value + 1),
+        1000
+      );
+
     return () => clearInterval(timer);
   }, [myActivePass]);
 
-  // Set default teacher when teachers load
-  useEffect(() => {
-    if (teachers.length > 0 && !selectedTeacherName) {
-      setSelectedTeacherName(teachers[0].name);
-    }
-  }, [teachers, selectedTeacherName]);
+  // ============================================================
+  // STUDENT'S PASS HISTORY
+  // ============================================================
 
-  // Student's recent passes
-  const myRecentPasses = allPasses.filter(
-    (p) => activeStudent && (p.studentId === activeStudent.studentId || p.studentDocId === activeStudent.id)
-  );
+  const myRecentPasses =
+    allPasses.filter(
+      (pass) =>
+        activeStudent &&
+        (
+          pass.studentId === activeStudent.studentId ||
+          pass.studentDocId === activeStudent.id
+        )
+    );
 
-  const myPassesToday = myRecentPasses.filter(
-    (p) => new Date(p.timeOut).toDateString() === new Date().toDateString()
-  );
+  const myPassesToday =
+    myRecentPasses.filter(
+      (pass) =>
+        new Date(pass.timeOut).toDateString() ===
+        new Date().toDateString()
+    );
 
-  // Handle Request Pass
-  const handleStartPass = async (e: React.FormEvent) => {
+  // ============================================================
+  // SUBMIT STUDENT REQUEST
+  // ============================================================
+
+  const handleRequestPass = async (
+    e: React.FormEvent
+  ) => {
     e.preventDefault();
+
     if (!activeStudent) {
-      setErrorMsg('No student profile selected.');
+      setErrorMsg(
+        'Your student profile could not be identified.'
+      );
       return;
     }
 
     if (myActivePass) {
-      setErrorMsg('You already have an active hall pass. Please return to class first.');
+      setErrorMsg(
+        'You already have an active hall pass.'
+      );
       return;
     }
 
-    if (!selectedTeacherName) {
-      setErrorMsg('Please select your authorizing teacher.');
+    if (pendingRequest) {
+      setErrorMsg(
+        'You already have a hall pass request waiting for teacher approval.'
+      );
       return;
     }
 
@@ -97,426 +198,734 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     setSuccessMsg(null);
 
     try {
-      const teacherObj = teachers.find((t) => t.name === selectedTeacherName);
-      await requestHallPass({
-        studentDocId: activeStudent.id,
-        studentId: activeStudent.studentId,
-        studentName: `${activeStudent.firstName} ${activeStudent.lastName}`,
-        studentEmail: activeStudent.email || currentUser?.email,
-        teacher: selectedTeacherName,
-        teacherRoom: teacherObj?.room || '',
-        destination: selectedDestination,
-        destinationDetails: destinationDetails.trim() || undefined,
-        createdBy: 'student'
+      await createStudentHallPassRequest({
+        studentDocId:
+          activeStudent.id,
+
+        studentId:
+          activeStudent.studentId,
+
+        studentName:
+          `${activeStudent.firstName} ${activeStudent.lastName}`,
+
+        studentEmail:
+          activeStudent.email ||
+          currentUser?.email ||
+          '',
+
+        teacherId: '',
+
+        teacherName: '',
+
+        teacherRoom:
+          activeStudent.homeroom || '',
+
+        destination:
+          selectedDestination,
+
+        destinationDetails:
+          destinationDetails.trim() || '',
+
+        notes:
+          destinationDetails.trim() || ''
       });
 
-      if (soundEnabled) playNotificationTone('start');
-      setSuccessMsg(`Hall pass to ${selectedDestination} started! Have a great day.`);
+      if (soundEnabled) {
+        playNotificationTone('start');
+      }
+
+      setSuccessMsg(
+        'Your hall pass request has been sent to your teacher for approval.'
+      );
+
       setDestinationDetails('');
+
     } catch (err: unknown) {
       const error = err as Error;
-      setErrorMsg(error.message || 'Failed to start hall pass. Please try again.');
+
+      setErrorMsg(
+        error.message ||
+        'Unable to send your hall pass request.'
+      );
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Handle Return to Class
-  const handleReturnToClass = async () => {
-    if (!myActivePass) return;
+  // ============================================================
+  // DESTINATION ICON
+  // ============================================================
 
-    setIsSubmitting(true);
-    setErrorMsg(null);
+  const getDestinationIcon = (
+    destination: DestinationType
+  ) => {
+    switch (destination) {
+      case 'Restroom':
+        return <Bath className="w-5 h-5" />;
 
-    try {
-      await endHallPass(myActivePass.id, 'student');
-      if (soundEnabled) playNotificationTone('end');
+      case 'Office':
+        return <Building2 className="w-5 h-5" />;
 
-      // Trigger celebratory micro-confetti
-      confetti({
-        particleCount: 40,
-        spread: 60,
-        origin: { y: 0.7 },
-        colors: ['#581c87', '#f59e0b', '#ffffff']
-      });
+      case 'Nurse':
+        return <HeartPulse className="w-5 h-5" />;
 
-      setSuccessMsg('Returned to class successfully! Welcome back.');
-    } catch (err: unknown) {
-      const error = err as Error;
-      setErrorMsg(error.message || 'Failed to complete pass.');
-    } finally {
-      setIsSubmitting(false);
+      case 'Counselor':
+        return <GraduationCap className="w-5 h-5" />;
+
+      case 'Another Classroom':
+        return <DoorOpen className="w-5 h-5" />;
+
+      case 'Library':
+        return <BookOpen className="w-5 h-5" />;
+
+      default:
+        return <HelpCircle className="w-5 h-5" />;
     }
   };
 
-  const getDestinationIcon = (dest: DestinationType) => {
-    switch (dest) {
-      case 'Restroom': return <Bath className="w-5 h-5" />;
-      case 'Office': return <Building2 className="w-5 h-5" />;
-      case 'Nurse': return <HeartPulse className="w-5 h-5" />;
-      case 'Counselor': return <UserCheck className="w-5 h-5" />;
-      case 'Another Classroom': return <DoorOpen className="w-5 h-5" />;
-      case 'Library': return <BookOpen className="w-5 h-5" />;
-      default: return <HelpCircle className="w-5 h-5" />;
-    }
-  };
+  // ============================================================
+  // NO STUDENT PROFILE
+  // ============================================================
 
   if (!activeStudent) {
     return (
       <div className="max-w-xl mx-auto py-12 px-4 text-center">
         <div className="bg-white rounded-2xl shadow-xl p-8 border border-purple-100">
+
           <div className="w-16 h-16 rounded-full bg-purple-100 text-purple-900 mx-auto flex items-center justify-center mb-4">
             <GraduationCap className="w-8 h-8" />
           </div>
-          <h2 className="text-2xl font-bold text-purple-950 mb-2">Student Pass Login</h2>
-          <p className="text-slate-600 mb-6 text-sm">
-            Select your 8th-grade student profile to request or view your hall passes.
+
+          <h2 className="text-2xl font-bold text-purple-950 mb-2">
+            Student Account
+          </h2>
+
+          <p className="text-slate-600 text-sm">
+            Your student profile could not be loaded.
+            Please sign out and sign back in.
           </p>
-          <div className="space-y-2 max-h-60 overflow-y-auto text-left">
-            {students.map((student) => (
-              <button
-                key={student.id}
-                onClick={() => selectStudent(student)}
-                className="w-full flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-purple-500 hover:bg-purple-50 transition"
-              >
-                <div>
-                  <span className="font-semibold text-slate-800">{student.firstName} {student.lastName}</span>
-                  <span className="block text-xs text-slate-500">ID #{student.studentId} • Grade {student.grade}</span>
-                </div>
-                <ArrowRight className="w-4 h-4 text-purple-600" />
-              </button>
-            ))}
-          </div>
+
         </div>
       </div>
     );
   }
 
-  const urgency = myActivePass ? getPassUrgency(myActivePass.timeOut) : null;
+  const urgency =
+    myActivePass
+      ? getPassUrgency(myActivePass.timeOut)
+      : null;
+
+  // ============================================================
+  // MAIN STUDENT VIEW
+  // ============================================================
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-      
-      {/* Student Profile Header Card */}
-      <div className="bg-gradient-to-r from-purple-900 via-purple-950 to-indigo-950 text-white rounded-2xl p-5 sm:p-6 shadow-xl border-2 border-amber-400/40 relative overflow-hidden">
-        {/* Subtle decorative background glow */}
-        <div className="absolute top-0 right-0 -mt-8 -mr-8 w-44 h-44 bg-amber-400/10 rounded-full blur-2xl pointer-events-none" />
 
-        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* ======================================================
+          STUDENT HEADER
+      ====================================================== */}
+
+      <div className="bg-gradient-to-r from-purple-900 via-purple-950 to-indigo-950 text-white rounded-2xl p-5 sm:p-6 shadow-xl border-2 border-amber-400/40">
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-amber-400 text-purple-950 font-black text-xl flex items-center justify-center shadow-lg border-2 border-amber-200">
-              {activeStudent.firstName[0]}{activeStudent.lastName[0]}
+
+            <div className="w-14 h-14 rounded-2xl bg-amber-400 text-purple-950 font-black text-xl flex items-center justify-center shadow-lg">
+              {activeStudent.firstName[0]}
+              {activeStudent.lastName[0]}
             </div>
+
             <div>
+
               <div className="flex items-center gap-2">
-                <span className="text-xs font-bold bg-amber-400 text-purple-950 px-2 py-0.5 rounded-full uppercase tracking-wider">
+
+                <span className="text-xs font-bold bg-amber-400 text-purple-950 px-2.5 py-0.5 rounded-full uppercase tracking-wider">
                   Grade {activeStudent.grade}
                 </span>
+
                 <span className="text-xs text-purple-200 font-mono">
-                  Student ID: #{activeStudent.studentId}
+                  #{activeStudent.studentId}
                 </span>
+
               </div>
-              <h2 className="text-2xl font-black tracking-tight text-white mt-0.5">
-                {activeStudent.firstName} {activeStudent.lastName}
+
+              <h2 className="text-2xl font-black text-white mt-1">
+                {activeStudent.firstName}{' '}
+                {activeStudent.lastName}
               </h2>
+
               <p className="text-xs text-purple-200">
-                Homeroom: {activeStudent.homeroom || 'Room 204'} • Jackson Memorial Middle School
+                Hall Pass System
               </p>
+
             </div>
+
           </div>
 
-          {/* Current Status Badge */}
-          <div className="flex items-center gap-3">
+          <div>
+
             {myActivePass ? (
+
               <div className="bg-amber-400 text-purple-950 px-4 py-2 rounded-xl font-bold flex items-center gap-2 shadow-lg animate-pulse">
+
                 <Clock className="w-5 h-5" />
+
                 <div>
-                  <div className="text-[10px] uppercase tracking-wider font-extrabold">Current Status</div>
-                  <div className="text-sm">Pass Active ({myActivePass.destination})</div>
+                  <div className="text-[10px] uppercase tracking-wider font-extrabold">
+                    Current Status
+                  </div>
+
+                  <div className="text-sm">
+                    Pass Active
+                  </div>
                 </div>
+
               </div>
+
+            ) : pendingRequest ? (
+
+              <div className="bg-blue-500/20 border border-blue-300/50 text-blue-100 px-4 py-2 rounded-xl font-bold flex items-center gap-2">
+
+                <Clock className="w-5 h-5 text-blue-300" />
+
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider font-semibold">
+                    Current Status
+                  </div>
+
+                  <div className="text-sm">
+                    Waiting for Approval
+                  </div>
+                </div>
+
+              </div>
+
             ) : (
+
               <div className="bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 px-4 py-2 rounded-xl font-bold flex items-center gap-2">
+
                 <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+
                 <div>
-                  <div className="text-[10px] uppercase tracking-wider font-semibold text-emerald-200">Current Status</div>
-                  <div className="text-sm text-emerald-100">In Classroom</div>
+                  <div className="text-[10px] uppercase tracking-wider font-semibold">
+                    Current Status
+                  </div>
+
+                  <div className="text-sm">
+                    In Classroom
+                  </div>
                 </div>
+
               </div>
+
             )}
+
           </div>
+
         </div>
 
-        {/* Daily Stats Summary */}
-        <div className="mt-4 pt-4 border-t border-purple-800/80 grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+        <div className="mt-4 pt-4 border-t border-purple-800/80 grid grid-cols-2 gap-3 text-xs">
+
           <div className="bg-purple-900/60 rounded-lg p-2.5">
-            <span className="text-purple-300 block">Passes Today</span>
-            <span className="text-lg font-bold text-amber-300">{myPassesToday.length} passes</span>
-          </div>
-          <div className="bg-purple-900/60 rounded-lg p-2.5">
-            <span className="text-purple-300 block">Total Passes (This Month)</span>
-            <span className="text-lg font-bold text-white">{myRecentPasses.length} passes</span>
-          </div>
-          <div className="bg-purple-900/60 rounded-lg p-2.5 col-span-2 sm:col-span-1">
-            <span className="text-purple-300 block">Average Duration</span>
-            <span className="text-lg font-bold text-white">
-              {myRecentPasses.length > 0 
-                ? `${Math.round(myRecentPasses.reduce((a, b) => a + (b.durationMinutes || 4), 0) / myRecentPasses.length)} min`
-                : '4.5 min'}
+            <span className="text-purple-300 block">
+              Passes Today
+            </span>
+
+            <span className="text-lg font-bold text-amber-300">
+              {myPassesToday.length}
             </span>
           </div>
+
+          <div className="bg-purple-900/60 rounded-lg p-2.5">
+            <span className="text-purple-300 block">
+              Total Passes
+            </span>
+
+            <span className="text-lg font-bold text-white">
+              {myRecentPasses.length}
+            </span>
+          </div>
+
         </div>
+
       </div>
 
-      {/* Notifications / Feedback Messages */}
+      {/* ======================================================
+          ERROR
+      ====================================================== */}
+
       {errorMsg && (
         <div className="bg-rose-50 border-l-4 border-rose-500 p-4 rounded-xl text-rose-800 flex items-start gap-3 shadow-sm">
-          <AlertTriangle className="w-5 h-5 text-rose-600 flex-shrink-0 mt-0.5" />
+
+          <AlertTriangle className="w-5 h-5 text-rose-600 flex-shrink-0" />
+
           <div className="text-sm">
-            <p className="font-bold">Notice</p>
-            <p>{errorMsg}</p>
+            <p className="font-bold">
+              Notice
+            </p>
+
+            <p>
+              {errorMsg}
+            </p>
           </div>
+
         </div>
       )}
+
+      {/* ======================================================
+          SUCCESS
+      ====================================================== */}
 
       {successMsg && (
         <div className="bg-emerald-50 border-l-4 border-emerald-500 p-4 rounded-xl text-emerald-900 flex items-start gap-3 shadow-sm">
-          <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+
+          <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+
           <div className="text-sm">
-            <p className="font-bold">Success</p>
-            <p>{successMsg}</p>
+            <p className="font-bold">
+              Request Sent
+            </p>
+
+            <p>
+              {successMsg}
+            </p>
           </div>
+
         </div>
       )}
 
-      {/* ========================================================
-          CASE 1: STUDENT HAS AN ACTIVE PASS (SHOW ACTIVE PASS CARD)
-         ======================================================== */}
+      {/* ======================================================
+          ACTIVE PASS
+      ====================================================== */}
+
       {myActivePass ? (
-        <div className="bg-white rounded-2xl shadow-xl border-4 border-amber-400 p-6 sm:p-8 relative overflow-hidden text-center space-y-6">
+
+        <div className="bg-white rounded-2xl shadow-xl border-4 border-amber-400 p-6 sm:p-8 text-center space-y-6">
+
           <div className="inline-flex items-center gap-2 bg-purple-950 text-amber-400 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest">
-            <Sparkles className="w-4 h-4 text-amber-400" />
-            Official Jackson Memorial Hall Pass
+
+            <Sparkles className="w-4 h-4" />
+
+            Official Hall Pass
+
           </div>
 
-          <div className="space-y-2">
+          <div>
+
             <div className="text-slate-500 text-sm font-semibold uppercase tracking-wider">
               Authorized Destination
             </div>
-            <div className="flex items-center justify-center gap-3 text-3xl sm:text-4xl font-black text-purple-950">
+
+            <div className="flex items-center justify-center gap-3 text-3xl sm:text-4xl font-black text-purple-950 mt-2">
+
               <span className="p-3 rounded-2xl bg-purple-100 text-purple-900">
-                {getDestinationIcon(myActivePass.destination)}
+                {getDestinationIcon(
+                  myActivePass.destination
+                )}
               </span>
-              <span>{myActivePass.destination}</span>
+
+              <span>
+                {myActivePass.destination}
+              </span>
+
             </div>
+
             {myActivePass.destinationDetails && (
-              <p className="text-slate-600 font-medium italic text-sm">
+              <p className="text-slate-600 font-medium italic text-sm mt-2">
                 "{myActivePass.destinationDetails}"
               </p>
             )}
+
           </div>
 
-          {/* Large Live Timer & Urgency */}
-          <div className="bg-slate-50 border-2 border-slate-200 rounded-2xl p-6 max-w-md mx-auto space-y-2">
+          <div className="bg-slate-50 border-2 border-slate-200 rounded-2xl p-6 max-w-md mx-auto">
+
             <div className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center justify-center gap-1.5">
+
               <Clock className="w-4 h-4 text-purple-600" />
-              Time Out In Hallway
-            </div>
-            <div className="text-5xl sm:text-6xl font-black font-mono tracking-tight text-purple-950">
-              {formatElapsedTime(myActivePass.timeOut)}
-            </div>
-            <div className="text-xs text-slate-500">
-              Started at <span className="font-semibold text-slate-700">{formatTimeAmPm(myActivePass.timeOut)}</span>
+
+              Time Out
+
             </div>
 
-            {/* Urgency Badge */}
+            <div className="text-5xl sm:text-6xl font-black font-mono text-purple-950 mt-2">
+
+              {formatElapsedTime(
+                myActivePass.timeOut
+              )}
+
+            </div>
+
+            <div className="text-xs text-slate-500 mt-1">
+
+              Started at{' '}
+
+              <span className="font-semibold text-slate-700">
+                {formatTimeAmPm(
+                  myActivePass.timeOut
+                )}
+              </span>
+
+            </div>
+
             {urgency && (
-              <div className="pt-2">
-                <span className={`inline-block px-3 py-1 rounded-full text-xs ${urgency.badgeClass}`}>
+              <div className="pt-3">
+
+                <span
+                  className={`inline-block px-3 py-1 rounded-full text-xs ${urgency.badgeClass}`}
+                >
                   {urgency.label}
                 </span>
+
               </div>
             )}
+
           </div>
 
-          {/* Authorizing Teacher Details */}
-          <div className="text-xs text-slate-600 max-w-sm mx-auto bg-purple-50/70 p-3 rounded-xl border border-purple-100 flex items-center justify-between">
-            <span className="text-slate-500">Authorizing Teacher:</span>
-            <span className="font-bold text-purple-950">{myActivePass.teacher} {myActivePass.teacherRoom ? `(${myActivePass.teacherRoom})` : ''}</span>
-          </div>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 max-w-md mx-auto">
 
-          {/* Big Return To Class Button */}
-          <div className="pt-2">
-            <button
-              id="btn-return-to-class"
-              type="button"
-              onClick={handleReturnToClass}
-              disabled={isSubmitting}
-              className="w-full max-w-md mx-auto py-4 px-8 bg-gradient-to-r from-purple-900 via-purple-800 to-amber-600 hover:from-purple-950 hover:to-amber-700 text-white rounded-2xl font-black text-lg sm:text-xl shadow-xl shadow-purple-900/20 hover:shadow-2xl transition transform active:scale-95 flex items-center justify-center gap-3 border-2 border-amber-300"
-            >
-              <RotateCcw className="w-6 h-6 text-amber-300" />
-              <span>RETURN TO CLASS</span>
-            </button>
-            <p className="text-xs text-slate-500 mt-2">
-              Tap immediately when you walk back into your classroom.
+            <p className="text-sm font-bold text-amber-900">
+              Your teacher approved this pass.
             </p>
+
+            <p className="text-xs text-amber-800 mt-1">
+              When you return to class, your teacher will end the pass.
+            </p>
+
           </div>
+
         </div>
-      ) : (
-        /* ========================================================
-           CASE 2: STUDENT IS IN CLASS (SHOW REQUEST FORM)
-           ======================================================== */
-        <div className="bg-white rounded-2xl shadow-xl border border-purple-100 p-6 sm:p-8 space-y-6">
-          <div className="border-b border-slate-100 pb-4">
-            <h3 className="text-xl font-bold text-purple-950 flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-amber-500" />
-              Request New Hall Pass
+
+      ) : pendingRequest ? (
+
+        /* ====================================================
+           PENDING REQUEST
+           ==================================================== */
+
+        <div className="bg-white rounded-2xl shadow-xl border-2 border-blue-300 p-6 sm:p-8 text-center space-y-6">
+
+          <div className="w-16 h-16 rounded-full bg-blue-100 text-blue-700 mx-auto flex items-center justify-center">
+
+            <Clock className="w-8 h-8 animate-pulse" />
+
+          </div>
+
+          <div>
+
+            <h3 className="text-2xl font-black text-purple-950">
+              Waiting for Teacher Approval
             </h3>
-            <p className="text-sm text-slate-600">
-              Select your destination and teacher to start a pass. Only 1 active pass is permitted.
+
+            <p className="text-sm text-slate-600 mt-2">
+              Your request has been sent to your teacher.
+              Please wait for approval before leaving the classroom.
             </p>
+
           </div>
 
-          <form onSubmit={handleStartPass} className="space-y-6">
-            
-            {/* 1. Destination Selection Grid */}
-            <div>
-              <label className="block text-sm font-bold text-slate-800 mb-2">
-                1. Select Destination <span className="text-purple-600">*</span>
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
-                {Object.values(DESTINATIONS).map((dest) => {
-                  const isSelected = selectedDestination === dest.name;
-                  return (
-                    <button
-                      key={dest.name}
-                      type="button"
-                      onClick={() => setSelectedDestination(dest.name)}
-                      className={`p-3.5 rounded-xl border-2 text-left flex flex-col justify-between transition-all ${
-                        isSelected
-                          ? 'border-purple-800 bg-purple-50 text-purple-950 shadow-md ring-2 ring-purple-300'
-                          : 'border-slate-200 hover:border-purple-300 hover:bg-slate-50 text-slate-700'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <span className={`p-2 rounded-lg ${isSelected ? 'bg-purple-900 text-amber-300' : 'bg-slate-100 text-slate-600'}`}>
-                          {getDestinationIcon(dest.name)}
-                        </span>
-                        {isSelected && (
-                          <span className="w-2.5 h-2.5 rounded-full bg-purple-700" />
-                        )}
-                      </div>
-                      <div>
-                        <div className="font-bold text-sm leading-tight">{dest.name}</div>
-                        <div className="text-[11px] text-slate-500 mt-0.5">{dest.defaultMaxMinutes} min target</div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 max-w-md mx-auto text-left space-y-3">
+
+            <div className="flex items-center justify-between">
+
+              <span className="text-xs font-bold text-slate-500 uppercase">
+                Destination
+              </span>
+
+              <span className="font-bold text-purple-950 flex items-center gap-2">
+
+                {getDestinationIcon(
+                  pendingRequest.destination
+                )}
+
+                {pendingRequest.destination}
+
+              </span>
+
             </div>
 
-            {/* 2. Teacher Selector */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {pendingRequest.destinationDetails && (
               <div>
-                <label className="block text-sm font-bold text-slate-800 mb-1.5">
-                  2. Authorizing Teacher <span className="text-purple-600">*</span>
-                </label>
-                <select
-                  id="select-authorizing-teacher"
-                  value={selectedTeacherName}
-                  onChange={(e) => setSelectedTeacherName(e.target.value)}
-                  required
-                  className="w-full px-3.5 py-2.5 rounded-xl border-2 border-slate-200 focus:border-purple-700 focus:ring-2 focus:ring-purple-200 outline-none text-sm font-medium text-slate-800 bg-white"
-                >
-                  {teachers.map((teacher) => (
-                    <option key={teacher.id} value={teacher.name}>
-                      {teacher.name} — {teacher.room} ({teacher.subject})
-                    </option>
-                  ))}
-                </select>
-              </div>
 
-              {/* 3. Optional Details / Specific Room */}
-              <div>
-                <label className="block text-sm font-bold text-slate-800 mb-1.5">
-                  3. Reason / Notes <span className="text-slate-400 font-normal">(Optional)</span>
-                </label>
-                <input
-                  id="input-destination-notes"
-                  type="text"
-                  placeholder={
-                    selectedDestination === 'Another Classroom' 
-                      ? 'e.g., Returning Chromebook to Mrs. Harper'
-                      : selectedDestination === 'Other'
-                      ? 'e.g., Locker trip for binder'
-                      : 'Add any specific notes...'
-                  }
-                  value={destinationDetails}
-                  onChange={(e) => setDestinationDetails(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border-2 border-slate-200 focus:border-purple-700 focus:ring-2 focus:ring-purple-200 outline-none text-sm text-slate-800"
-                />
-              </div>
-            </div>
+                <span className="text-xs font-bold text-slate-500 uppercase">
+                  Reason / Details
+                </span>
 
-            {/* Giant Submit Button */}
-            <button
-              id="btn-submit-hall-pass"
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full py-4 px-6 bg-gradient-to-r from-purple-950 via-purple-900 to-amber-500 hover:from-purple-900 hover:to-amber-600 text-white rounded-2xl font-black text-lg shadow-xl shadow-purple-950/20 hover:shadow-2xl transition transform active:scale-[0.98] flex items-center justify-center gap-3 border border-amber-300"
-            >
-              <Send className="w-5 h-5 text-amber-300" />
-              <span>REQUEST & START HALL PASS</span>
-            </button>
-          </form>
+                <p className="text-sm text-slate-700 mt-1">
+                  {pendingRequest.destinationDetails}
+                </p>
+
+              </div>
+            )}
+
+          </div>
+
+          <div className="flex items-center justify-center gap-2 text-xs text-blue-700 font-semibold">
+
+            <Clock className="w-4 h-4" />
+
+            Do not leave the classroom until your teacher approves the request.
+
+          </div>
+
         </div>
+
+      ) : (
+
+        /* ====================================================
+           REQUEST FORM
+           ==================================================== */
+
+        <div className="bg-white rounded-2xl shadow-xl border border-purple-100 p-6 sm:p-8 space-y-6">
+
+          <div className="border-b border-slate-100 pb-4">
+
+            <h3 className="text-xl font-bold text-purple-950 flex items-center gap-2">
+
+              <MapPin className="w-5 h-5 text-amber-500" />
+
+              Request a Hall Pass
+
+            </h3>
+
+            <p className="text-sm text-slate-600 mt-1">
+              Choose where you need to go and send your request to your teacher.
+            </p>
+
+          </div>
+
+          {requestLoading ? (
+
+            <div className="py-8 text-center text-sm text-slate-500">
+              Checking for existing requests...
+            </div>
+
+          ) : (
+
+            <form
+              onSubmit={handleRequestPass}
+              className="space-y-6"
+            >
+
+              {/* DESTINATION */}
+
+              <div>
+
+                <label className="block text-sm font-bold text-slate-800 mb-2">
+                  Where do you need to go?
+                </label>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+
+                  {Object.values(DESTINATIONS).map(
+                    (destination) => {
+
+                      const isSelected =
+                        selectedDestination ===
+                        destination.name;
+
+                      return (
+                        <button
+                          key={destination.name}
+                          type="button"
+                          onClick={() =>
+                            setSelectedDestination(
+                              destination.name
+                            )
+                          }
+                          className={`p-4 rounded-xl border-2 text-left transition-all ${
+                            isSelected
+                              ? 'border-purple-800 bg-purple-50 text-purple-950 shadow-md ring-2 ring-purple-300'
+                              : 'border-slate-200 hover:border-purple-300 hover:bg-slate-50 text-slate-700'
+                          }`}
+                        >
+
+                          <div className="flex items-center justify-between mb-3">
+
+                            <span
+                              className={`p-2 rounded-lg ${
+                                isSelected
+                                  ? 'bg-purple-900 text-amber-300'
+                                  : 'bg-slate-100 text-slate-600'
+                              }`}
+                            >
+                              {getDestinationIcon(
+                                destination.name
+                              )}
+                            </span>
+
+                            {isSelected && (
+                              <CheckCircle2 className="w-5 h-5 text-purple-700" />
+                            )}
+
+                          </div>
+
+                          <div className="font-bold text-sm">
+                            {destination.name}
+                          </div>
+
+                        </button>
+                      );
+                    }
+                  )}
+
+                </div>
+
+              </div>
+
+              {/* REASON */}
+
+              <div>
+
+                <label className="block text-sm font-bold text-slate-800 mb-1.5">
+
+                  Reason / Details
+
+                  <span className="font-normal text-slate-400">
+                    {' '}(Optional)
+                  </span>
+
+                </label>
+
+                <textarea
+                  id="input-destination-notes"
+                  value={destinationDetails}
+                  onChange={(e) =>
+                    setDestinationDetails(
+                      e.target.value
+                    )
+                  }
+                  placeholder="Tell your teacher why you need to leave..."
+                  rows={3}
+                  className="w-full px-3.5 py-3 rounded-xl border-2 border-slate-200 focus:border-purple-700 focus:ring-2 focus:ring-purple-200 outline-none text-sm text-slate-800 resize-none"
+                />
+
+              </div>
+
+              {/* SUBMIT */}
+
+              <button
+                id="btn-submit-hall-pass"
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full py-4 px-6 bg-gradient-to-r from-purple-950 via-purple-900 to-amber-500 hover:from-purple-900 hover:to-amber-600 disabled:opacity-50 text-white rounded-2xl font-black text-lg shadow-xl transition flex items-center justify-center gap-3 border border-amber-300"
+              >
+
+                <Send className="w-5 h-5 text-amber-300" />
+
+                <span>
+                  {isSubmitting
+                    ? 'SENDING REQUEST...'
+                    : 'REQUEST HALL PASS'}
+                </span>
+
+              </button>
+
+              <p className="text-center text-xs text-slate-500">
+                Your teacher must approve your request before you leave the classroom.
+              </p>
+
+            </form>
+
+          )}
+
+        </div>
+
       )}
 
-      {/* Pass History for Current Student */}
-      <div className="bg-white rounded-2xl shadow-md border border-slate-200/80 p-5 space-y-4">
+      {/* ======================================================
+          RECENT HISTORY
+      ====================================================== */}
+
+      <div className="bg-white rounded-2xl shadow-md border border-slate-200 p-5 space-y-4">
+
         <div className="flex items-center justify-between">
+
           <h4 className="text-base font-bold text-purple-950 flex items-center gap-2">
+
             <Clock className="w-4 h-4 text-purple-600" />
+
             My Recent Pass Activity
+
           </h4>
+
           <span className="text-xs text-slate-500 font-medium">
-            {myRecentPasses.length} total logged
+            {myRecentPasses.length} total
           </span>
+
         </div>
 
         {myRecentPasses.length === 0 ? (
+
           <div className="text-center py-6 text-slate-400 text-sm">
-            No hall passes recorded yet for {activeStudent.firstName}.
+            No hall passes recorded yet.
           </div>
+
         ) : (
-          <div className="divide-y divide-slate-100 overflow-hidden">
-            {myRecentPasses.slice(0, 5).map((pass) => (
-              <div key={pass.id} className="py-3 flex items-center justify-between text-xs sm:text-sm">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-purple-50 text-purple-900">
-                    {getDestinationIcon(pass.destination)}
+
+          <div className="divide-y divide-slate-100">
+
+            {myRecentPasses
+              .slice(0, 5)
+              .map((pass) => (
+
+                <div
+                  key={pass.id}
+                  className="py-3 flex items-center justify-between"
+                >
+
+                  <div className="flex items-center gap-3">
+
+                    <div className="p-2 rounded-lg bg-purple-50 text-purple-900">
+                      {getDestinationIcon(
+                        pass.destination
+                      )}
+                    </div>
+
+                    <div>
+
+                      <span className="font-bold text-slate-800 text-sm">
+                        {pass.destination}
+                      </span>
+
+                      <span className="text-slate-500 text-xs block">
+                        {new Date(
+                          pass.timeOut
+                        ).toLocaleDateString([], {
+                          month: 'short',
+                          day: 'numeric'
+                        })}{' '}
+                        at{' '}
+                        {formatTimeAmPm(
+                          pass.timeOut
+                        )}
+                      </span>
+
+                    </div>
+
                   </div>
-                  <div>
-                    <span className="font-bold text-slate-800">{pass.destination}</span>
-                    <span className="text-slate-500 text-xs block">
-                      Teacher: {pass.teacher} • {new Date(pass.timeOut).toLocaleDateString([], { month: 'short', day: 'numeric' })} at {formatTimeAmPm(pass.timeOut)}
-                    </span>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <span className={`px-2.5 py-0.5 rounded-full font-bold text-xs ${
-                    pass.status === 'ACTIVE' 
-                      ? 'bg-amber-100 text-amber-800 animate-pulse' 
-                      : 'bg-slate-100 text-slate-700'
-                  }`}>
-                    {pass.status === 'ACTIVE' ? 'Out Now' : `${pass.durationMinutes || 4} min`}
+
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full font-bold text-xs ${
+                      pass.status === 'ACTIVE'
+                        ? 'bg-amber-100 text-amber-800'
+                        : 'bg-slate-100 text-slate-700'
+                    }`}
+                  >
+                    {pass.status === 'ACTIVE'
+                      ? 'Out Now'
+                      : `${pass.durationMinutes || 1} min`}
                   </span>
+
                 </div>
-              </div>
-            ))}
+
+              ))}
+
           </div>
+
         )}
+
       </div>
 
     </div>
