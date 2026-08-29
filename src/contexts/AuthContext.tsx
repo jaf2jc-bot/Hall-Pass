@@ -21,6 +21,7 @@ import {
   saveUserProfile,
   getTeacherByEmail,
   attachTeacherUid,
+  addTeacher,
   subscribeToStudents,
   subscribeToTeachers,
   subscribeToUserProfiles,
@@ -32,6 +33,23 @@ import {
   onAuthStateChanged,
   User
 } from 'firebase/auth';
+
+// ============================================================
+// ADMIN ALLOW-LIST
+// ============================================================
+//
+// Exact-match only. Do NOT use .includes()/.startsWith() checks
+// here — a substring match would let any account whose email
+// happens to contain "admin" (e.g. a student email) be granted
+// admin access.
+//
+// Add every real admin's full email address below.
+// ============================================================
+
+const ADMIN_EMAILS: string[] = [
+  'jaf2jc@bearworks.jackson.sparcc.org',
+  'admin@bearworks.jackson.sparcc.org'
+];
 
 interface AuthContextType {
 
@@ -327,10 +345,9 @@ export const AuthProvider: React.FC<{
         // ========================================================
 
         const isAdminAccount =
-          emailLower ===
-            'jaf2jc@bearworks.jackson.sparcc.org' ||
-          emailLower.includes('admin') ||
-          emailLower.startsWith('principal');
+          ADMIN_EMAILS.includes(
+            emailLower
+          );
 
         if (
           isAdminAccount
@@ -359,6 +376,111 @@ export const AuthProvider: React.FC<{
             room:
               'Main Administrative Office'
           };
+
+          // ------------------------------------------------------
+          // LINK (OR CREATE) A TEACHERS RECORD FOR THIS ADMIN
+          // ------------------------------------------------------
+          //
+          // The student "request a hall pass" dropdown reads from
+          // the `teachers` collection, not `users`. Without a
+          // matching teachers doc, students have no way to select
+          // the admin as the recipient of a request. This block
+          // finds an existing teachers doc for this email, or
+          // creates one, and stores its id on the admin's profile
+          // as teacherDocId so subscribeToTeacherHallPassRequests
+          // can be called with it later.
+          // ------------------------------------------------------
+
+          try {
+
+            let adminTeacherRecord =
+              await getTeacherByEmail(
+                emailLower
+              );
+
+            if (
+              !adminTeacherRecord
+            ) {
+
+              console.log(
+                '[AuthContext] No teachers record found for admin. Creating one.'
+              );
+
+              const newTeacherId =
+                await addTeacher({
+
+                  name:
+                    profile.displayName,
+
+                  room:
+                    profile.room ||
+                    'Main Administrative Office',
+
+                  subject:
+                    'Administration',
+
+                  email:
+                    emailLower,
+
+                  active:
+                    true,
+
+                  department:
+                    'Administration'
+                });
+
+              adminTeacherRecord = {
+
+                id:
+                  newTeacherId,
+
+                name:
+                  profile.displayName,
+
+                room:
+                  profile.room ||
+                  'Main Administrative Office',
+
+                subject:
+                  'Administration',
+
+                email:
+                  emailLower,
+
+                active:
+                  true,
+
+                department:
+                  'Administration'
+              };
+            }
+
+            await attachTeacherUid(
+              adminTeacherRecord.id,
+              user.uid
+            );
+
+            profile = {
+
+              ...profile,
+
+              teacherDocId:
+                adminTeacherRecord.id,
+
+              room:
+                adminTeacherRecord.room ||
+                profile.room
+            };
+
+          } catch (
+            teacherLinkError
+          ) {
+
+            console.error(
+              '[AuthContext] Failed to link admin to a teachers record:',
+              teacherLinkError
+            );
+          }
 
           await saveUserProfile(
             profile
