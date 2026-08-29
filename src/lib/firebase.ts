@@ -25,6 +25,11 @@ import {
   User
 } from 'firebase/auth';
 
+import {
+  getFunctions,
+  httpsCallable
+} from 'firebase/functions';
+
 import firebaseConfigData from '../../firebase-applet-config.json';
 
 import {
@@ -73,6 +78,8 @@ export const db =
     : getFirestore(app);
 
 export const auth = getAuth(app);
+
+const functions = getFunctions(app);
 
 
 // ============================================================
@@ -217,6 +224,33 @@ export async function getUserProfile(
 
     return null;
   }
+}
+
+
+// ============================================================
+// PROVISION USER PROFILE (Cloud Function)
+// ============================================================
+//
+// Role assignment (student / teacher / admin) now happens entirely
+// on the server, inside the provisionUserProfile Cloud Function.
+// This replaces the old client-side logic that wrote role directly
+// to Firestore from the browser — that path let a signed-in user
+// set their own role field, since Firestore rules had to trust
+// whatever the client sent. The Cloud Function uses the Admin SDK
+// (bypasses rules) and does its own roster lookup, so the client
+// never gets to declare its own role.
+//
+// Call this once right after a successful sign-in.
+
+const provisionUserProfileCallable =
+  httpsCallable<void, UserProfile>(
+    functions,
+    'provisionUserProfile'
+  );
+
+export async function provisionUserProfile(): Promise<UserProfile> {
+  const result = await provisionUserProfileCallable();
+  return result.data;
 }
 
 
