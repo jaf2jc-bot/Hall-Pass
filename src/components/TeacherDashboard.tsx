@@ -21,6 +21,7 @@ import {
   HallPass,
   Student,
   StudentRequest,
+  StudentHallPassRequest,
   Teacher
 } from '../types';
 
@@ -30,7 +31,10 @@ import {
   subscribeToStudentRequests,
   acceptStudentRequest,
   markStudentRequestArrived,
-  cancelStudentRequest
+  cancelStudentRequest,
+  subscribeToTeacherHallPassRequests,
+  approveStudentHallPassRequest,
+  denyStudentHallPassRequest
 } from '../lib/firebase';
 
 import {
@@ -103,6 +107,19 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     useState<string | null>(null);
 
   // ============================================================
+  // INCOMING HALL PASS REQUEST STATE (student asks, this teacher approves)
+  // ============================================================
+
+  const [incomingPassRequests, setIncomingPassRequests] =
+    useState<StudentHallPassRequest[]>([]);
+
+  const [passRequestActionLoadingId, setPassRequestActionLoadingId] =
+    useState<string | null>(null);
+
+  const [passRequestError, setPassRequestError] =
+    useState<string | null>(null);
+
+  // ============================================================
   // PERIOD OPTIONS
   // ============================================================
 
@@ -130,6 +147,76 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
     return () => unsubscribe();
   }, []);
+
+  // ============================================================
+  // INCOMING PASS REQUEST SUBSCRIPTION
+  // ============================================================
+
+  useEffect(() => {
+    if (!activeTeacher) {
+      setIncomingPassRequests([]);
+      return;
+    }
+
+    let previousPendingCount = -1;
+
+    const unsubscribe = subscribeToTeacherHallPassRequests(
+      activeTeacher.id,
+      (requests) => {
+        const pending = requests.filter(
+          (request) => request.status === 'PENDING'
+        );
+
+        // Play an alert tone when a NEW pending request shows up
+        // (skip the very first load so it doesn't fire on page open).
+        if (
+          previousPendingCount !== -1 &&
+          pending.length > previousPendingCount &&
+          soundEnabled
+        ) {
+          playNotificationTone('alert');
+        }
+        previousPendingCount = pending.length;
+
+        setIncomingPassRequests(pending);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [activeTeacher?.id, soundEnabled]);
+
+  // ============================================================
+  // APPROVE / DENY PASS REQUEST
+  // ============================================================
+
+  const handleApprovePassRequest = async (requestId: string) => {
+    setPassRequestActionLoadingId(requestId);
+    setPassRequestError(null);
+
+    try {
+      await approveStudentHallPassRequest(requestId);
+      if (soundEnabled) playNotificationTone('start');
+    } catch (err: unknown) {
+      const error = err as Error;
+      setPassRequestError(error.message || 'Failed to approve request.');
+    } finally {
+      setPassRequestActionLoadingId(null);
+    }
+  };
+
+  const handleDenyPassRequest = async (requestId: string) => {
+    setPassRequestActionLoadingId(requestId);
+    setPassRequestError(null);
+
+    try {
+      await denyStudentHallPassRequest(requestId);
+    } catch (err: unknown) {
+      const error = err as Error;
+      setPassRequestError(error.message || 'Failed to deny request.');
+    } finally {
+      setPassRequestActionLoadingId(null);
+    }
+  };
 
   // ============================================================
   // DEFAULT REQUEST DATE
@@ -927,6 +1014,73 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
         </div>
       </div>
+
+      {/* INCOMING HALL PASS REQUESTS */}
+
+      {incomingPassRequests.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-xl border-4 border-amber-400 overflow-hidden">
+
+          <div className="bg-amber-400 text-purple-950 px-5 py-3 flex items-center gap-2">
+            <ClipboardList className="w-5 h-5" />
+            <span className="font-black">
+              {incomingPassRequests.length} Pass Request{incomingPassRequests.length === 1 ? '' : 's'} Waiting For You
+            </span>
+          </div>
+
+          {passRequestError && (
+            <div className="bg-rose-50 border-l-4 border-rose-500 p-3 m-4 rounded-lg text-rose-800 text-xs flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0 text-rose-600" />
+              <span>{passRequestError}</span>
+            </div>
+          )}
+
+          <div className="divide-y divide-slate-100">
+            {incomingPassRequests.map((request) => {
+              const isActing = passRequestActionLoadingId === request.id;
+
+              return (
+                <div
+                  key={request.id}
+                  className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                >
+                  <div>
+                    <div className="font-bold text-slate-900">
+                      {request.studentName}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-0.5">
+                      Wants to go to <span className="font-semibold text-purple-900">{request.destination}</span>
+                      {request.destinationDetails && (
+                        <span> — "{request.destinationDetails}"</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={isActing}
+                      onClick={() => handleDenyPassRequest(request.id)}
+                      className="px-4 py-2 rounded-xl bg-rose-100 hover:bg-rose-200 text-rose-800 font-bold text-sm flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      <X className="w-4 h-4" />
+                      Deny
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isActing}
+                      onClick={() => handleApprovePassRequest(request.id)}
+                      className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-sm flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      <Check className="w-4 h-4" />
+                      {isActing ? 'Approving...' : 'Approve'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* REQUEST STUDENT MODAL */}
 
