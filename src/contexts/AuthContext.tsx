@@ -866,30 +866,97 @@ export const AuthProvider: React.FC<{
           profile.role === 'admin'
         ) {
 
-          setActiveTeacher({
+          // --------------------------------------------------------
+          // IMPORTANT:
+          //
+          // activeTeacher.id must be the `teachers` collection
+          // document id — NOT the Firebase Auth uid — because
+          // that's the id students pick from the "Who is your
+          // current teacher?" dropdown, and it's what gets stored
+          // as `teacherId` on studentHallPassRequests documents.
+          //
+          // subscribeToTeacherHallPassRequests(activeTeacher.id)
+          // filters by that same field, so if this ever falls
+          // back to profile.uid, incoming requests silently never
+          // match and nothing shows up on the dashboard.
+          // --------------------------------------------------------
 
-            id:
-              profile.uid,
+          let matchedAdminTeacher:
+            Teacher | undefined;
 
-            name:
-              profile.displayName,
+          if (
+            profile.teacherDocId
+          ) {
 
-            room:
-              profile.room ||
-              'Main Administrative Office',
+            matchedAdminTeacher =
+              teachers.find(
+                (teacher) =>
+                  teacher.id ===
+                  profile.teacherDocId
+              );
+          }
 
-            subject:
-              'Administration',
+          if (
+            !matchedAdminTeacher
+          ) {
 
-            email:
-              profile.email,
+            matchedAdminTeacher =
+              teachers.find(
+                (teacher) =>
+                  teacher.email &&
+                  profile.email &&
+                  teacher.email
+                    .toLowerCase() ===
+                    profile.email
+                      .toLowerCase()
+              );
+          }
 
-            active:
-              true,
+          if (
+            matchedAdminTeacher
+          ) {
 
-            department:
-              'Administration'
-          });
+            setActiveTeacher(
+              matchedAdminTeacher
+            );
+
+          } else {
+
+            // No matching teachers doc found yet (e.g. teachers
+            // list hasn't finished loading, or the auto-create
+            // step failed). Falls back to profile.teacherDocId if
+            // we have it so the id is still correct once the
+            // teachers list catches up on the next render.
+            console.warn(
+              '[AuthContext] No matching teachers record found for admin — incoming hall pass requests may not appear until this resolves.'
+            );
+
+            setActiveTeacher({
+
+              id:
+                profile.teacherDocId ||
+                profile.uid,
+
+              name:
+                profile.displayName,
+
+              room:
+                profile.room ||
+                'Main Administrative Office',
+
+              subject:
+                'Administration',
+
+              email:
+                profile.email,
+
+              active:
+                true,
+
+              department:
+                'Administration'
+            });
+          }
 
           /*
            * IMPORTANT:
