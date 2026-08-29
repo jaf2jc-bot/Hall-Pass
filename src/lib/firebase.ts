@@ -2716,6 +2716,45 @@ export async function acceptStudentRequest(
   const now =
     Date.now();
 
+  // ----------------------------------------------------------
+  // LOOK UP THE RECEIVING TEACHER'S FIREBASE UID
+  // ----------------------------------------------------------
+  //
+  // Same fix as approveStudentHallPassRequest(): Firestore's
+  // addDoc() throws on any undefined field value, so teacherUid
+  // must never be left as undefined. Resolve it from the
+  // receiving teacher's doc (falls back to '' if not set yet).
+  // ----------------------------------------------------------
+
+  let resolvedTeacherUid = '';
+
+  try {
+
+    const teacherDocSnap =
+      await getDoc(
+        doc(
+          db,
+          TEACHERS_COLLECTION,
+          request.receivingTeacherId
+        )
+      );
+
+    if (teacherDocSnap.exists()) {
+
+      resolvedTeacherUid =
+        String(
+          teacherDocSnap.data().uid || ''
+        );
+    }
+
+  } catch (error) {
+
+    console.error(
+      '[Firebase] Could not resolve teacherUid for arrived student request:',
+      error
+    );
+  }
+
   const passData:
     Omit<HallPass, 'id'> = {
 
@@ -2736,12 +2775,13 @@ export async function acceptStudentRequest(
 
     /*
      * IMPORTANT:
-     * We deliberately do not put the receiving teacher's
-     * Firebase UID here because the request system already
-     * identifies the teacher by receivingTeacherId.
+     * We resolve the receiving teacher's Firebase UID above so
+     * the field is never left `undefined` (Firestore rejects
+     * that). The request system also identifies the teacher by
+     * receivingTeacherId, kept as-is below.
      */
     teacherUid:
-      undefined,
+      resolvedTeacherUid,
 
     teacherRoom:
       request.receivingTeacherRoom ||
@@ -3923,6 +3963,50 @@ export async function approveStudentHallPassRequest(
     Date.now();
 
   // ----------------------------------------------------------
+  // LOOK UP THE TEACHER'S FIREBASE UID
+  // ----------------------------------------------------------
+  //
+  // request.teacherId is the `teachers` collection doc id, not
+  // a Firebase Auth uid. The actual uid (set by attachTeacherUid
+  // when that teacher/admin first logs in) lives on that doc as
+  // its `uid` field, so we look it up here.
+  //
+  // IMPORTANT: this must never end up as `undefined` — Firestore's
+  // addDoc() throws if any field value is undefined. Always fall
+  // back to an empty string, matching the pattern used elsewhere
+  // in this file (see requestHallPass()).
+  // ----------------------------------------------------------
+
+  let resolvedTeacherUid = '';
+
+  try {
+
+    const teacherDocSnap =
+      await getDoc(
+        doc(
+          db,
+          TEACHERS_COLLECTION,
+          request.teacherId
+        )
+      );
+
+    if (teacherDocSnap.exists()) {
+
+      resolvedTeacherUid =
+        String(
+          teacherDocSnap.data().uid || ''
+        );
+    }
+
+  } catch (error) {
+
+    console.error(
+      '[Firebase] Could not resolve teacherUid for approved request:',
+      error
+    );
+  }
+
+  // ----------------------------------------------------------
   // CREATE ACTIVE PASS
   // ----------------------------------------------------------
 
@@ -3945,7 +4029,7 @@ export async function approveStudentHallPassRequest(
       request.teacherName,
 
     teacherUid:
-      undefined,
+      resolvedTeacherUid,
 
     teacherRoom:
       request.teacherRoom || '',
