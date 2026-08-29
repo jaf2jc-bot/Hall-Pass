@@ -39,9 +39,17 @@ service cloud.firestore {
     }
 
     // 1. Users collection (Authentication & Roles)
+    // Role assignment now happens ONLY in the provisionUserProfile Cloud
+    // Function, which uses the Admin SDK and bypasses these rules entirely.
+    // Clients can never create their own user doc or change their role.
     match /users/{userId} {
       allow read: if isAuthenticated() && (request.auth.uid == userId || isTeacher());
-      allow create, update: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow create: if isAdmin();
+      allow update: if isAdmin() || (
+        isAuthenticated() &&
+        request.auth.uid == userId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL', 'updatedAt'])
+      );
       allow delete: if isAdmin();
     }
 
@@ -109,4 +117,3 @@ service cloud.firestore {
     }
   }
 }
-
