@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Header } from './components/Header';
 import { StudentDashboard } from './components/StudentDashboard';
@@ -33,72 +33,131 @@ function MainApp() {
     isLoading
   } = useAuth();
 
-  // Real-time Firestore pass state
-  const [activePasses, setActivePasses] = useState<HallPass[]>([]);
-  const [allPasses, setAllPasses] = useState<HallPass[]>([]);
+  // ============================================================
+  // REAL-TIME FIRESTORE PASS STATE
+  // ============================================================
 
-  // Navigation
-  const [activeTab, setActiveTab] = useState<string>('student');
-  const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+  const [activePasses, setActivePasses] =
+    useState<HallPass[]>([]);
 
-  // Modals
-  const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
+  const [allPasses, setAllPasses] =
+    useState<HallPass[]>([]);
+
+  // ============================================================
+  // NAVIGATION
+  // ============================================================
+
+  const [activeTab, setActiveTab] =
+    useState<string>('student');
+
+  const [soundEnabled, setSoundEnabled] =
+    useState<boolean>(true);
+
+  // ============================================================
+  // MODALS
+  // ============================================================
+
+  const [isRequestModalOpen, setIsRequestModalOpen] =
+    useState(false);
+
   const [requestModalStudent, setRequestModalStudent] =
     useState<Student | null>(null);
+
   const [detailModalStudent, setDetailModalStudent] =
     useState<Student | null>(null);
 
   // ============================================================
+  // ADMIN TEST MODE
+  // ============================================================
+
+  /*
+   * An admin is allowed to view the StudentDashboard for testing.
+   *
+   * IMPORTANT:
+   * This does NOT change the Firebase user's role.
+   *
+   * The admin remains an admin.
+   * activeStudent simply tells the StudentDashboard which
+   * student account should be simulated.
+   */
+
+  const isAdminStudentTestMode =
+    currentRole === 'admin' &&
+    activeTab === 'student';
+
+  // ============================================================
   // REAL-TIME FIRESTORE PASS SUBSCRIPTIONS
   // ============================================================
+
   useEffect(() => {
     let unsubActive: (() => void) | undefined;
     let unsubAll: (() => void) | undefined;
 
-    // Logged out
+    // ----------------------------------------------------------
+    // LOGGED OUT
+    // ----------------------------------------------------------
+
     if (!currentUser || !currentRole) {
       setActivePasses([]);
       setAllPasses([]);
+
       return () => {};
     }
 
-    // Student
+    // ----------------------------------------------------------
+    // STUDENT
+    // ----------------------------------------------------------
+
     if (currentRole === 'student') {
       const studentId =
-        activeStudent?.studentId || currentUser?.studentId;
+        activeStudent?.studentId ||
+        currentUser?.studentId;
 
       if (studentId) {
-        unsubActive = subscribeToStudentActivePass(
-          studentId,
-          (pass) => {
-            setActivePasses(pass ? [pass] : []);
-          }
-        );
+        unsubActive =
+          subscribeToStudentActivePass(
+            studentId,
+            (pass) => {
+              setActivePasses(
+                pass ? [pass] : []
+              );
+            }
+          );
 
-        unsubAll = subscribeToStudentPasses(
-          studentId,
-          (passes) => {
-            setAllPasses(passes);
-          }
-        );
+        unsubAll =
+          subscribeToStudentPasses(
+            studentId,
+            (passes) => {
+              setAllPasses(passes);
+            }
+          );
       } else {
         setActivePasses([]);
         setAllPasses([]);
       }
     }
 
-    // Teacher/Admin
+    // ----------------------------------------------------------
+    // TEACHER / ADMIN
+    // ----------------------------------------------------------
+
     else if (
       currentRole === 'teacher' ||
       currentRole === 'admin'
     ) {
-      unsubActive = subscribeToActivePasses((passes) => {
-        setActivePasses(passes);
-      });
+      unsubActive =
+        subscribeToActivePasses(
+          (passes) => {
+            setActivePasses(passes);
+          }
+        );
 
-      unsubAll = subscribeToAllPasses((passes) => {
-        setAllPasses(passes);
-      });
+      unsubAll =
+        subscribeToAllPasses(
+          (passes) => {
+            setAllPasses(passes);
+          }
+        );
     }
 
     return () => {
@@ -117,36 +176,47 @@ function MainApp() {
   ]);
 
   // ============================================================
-  // ROLE-BASED NAVIGATION
+  // ROLE-BASED DEFAULT NAVIGATION
   // ============================================================
-useEffect(() => {
-  if (currentRole === 'student') {
-    setActiveTab('student');
-  } else if (currentRole === 'teacher') {
-    setActiveTab('teacher');
-  } else if (currentRole === 'admin') {
-    setActiveTab('admin');
-  }
-}, [currentRole]);
+
+  useEffect(() => {
+    if (currentRole === 'student') {
+      setActiveTab('student');
+    } else if (currentRole === 'teacher') {
+      setActiveTab('teacher');
+    } else if (currentRole === 'admin') {
+      setActiveTab('admin');
+    }
+  }, [currentRole]);
 
   // ============================================================
   // MODAL FUNCTIONS
   // ============================================================
-  const handleOpenRequestModal = (student?: Student) => {
-    setRequestModalStudent(student || null);
+
+  const handleOpenRequestModal = (
+    student?: Student
+  ) => {
+    setRequestModalStudent(
+      student || null
+    );
+
     setIsRequestModalOpen(true);
   };
 
-  const handleOpenStudentDetail = (student: Student) => {
+  const handleOpenStudentDetail = (
+    student: Student
+  ) => {
     setDetailModalStudent(student);
   };
 
   // ============================================================
   // LOADING SCREEN
   // ============================================================
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
+
         <div className="bg-white p-8 rounded-2xl shadow-xl border-2 border-purple-200 text-center max-w-sm w-full space-y-4">
 
           <div className="w-16 h-16 rounded-2xl bg-purple-950 text-amber-400 font-black text-2xl flex items-center justify-center mx-auto animate-bounce shadow-lg">
@@ -168,6 +238,7 @@ useEffect(() => {
           </div>
 
         </div>
+
       </div>
     );
   }
@@ -175,11 +246,11 @@ useEffect(() => {
   // ============================================================
   // LOGGED OUT BASE PAGE
   // ============================================================
+
   if (!currentUser || !currentRole) {
     return (
       <div className="min-h-screen bg-slate-100 flex flex-col font-sans antialiased">
 
-        {/* Header */}
         <Header
           activeTab=""
           setActiveTab={setActiveTab}
@@ -188,7 +259,6 @@ useEffect(() => {
           setSoundEnabled={setSoundEnabled}
         />
 
-        {/* Base Page */}
         <main className="flex-1 flex items-center justify-center px-4 py-16">
 
           <div className="bg-white rounded-2xl shadow-xl border-2 border-purple-200 max-w-lg w-full p-8 text-center">
@@ -221,7 +291,6 @@ useEffect(() => {
 
         </main>
 
-        {/* Logged Out Footer */}
         <footer className="bg-purple-950 text-purple-300 border-t border-purple-900 py-4 text-center text-xs mt-auto">
 
           <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
@@ -239,10 +308,12 @@ useEffect(() => {
             </div>
 
             <div className="flex items-center gap-3 text-purple-400">
+
               <span className="flex items-center gap-1">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
                 RBAC Hardened Security & Google SSO
               </span>
+
             </div>
 
           </div>
@@ -256,10 +327,14 @@ useEffect(() => {
   // ============================================================
   // LOGGED-IN APPLICATION
   // ============================================================
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans antialiased">
 
-      {/* Header & Navigation */}
+      {/* ======================================================
+          HEADER
+      ====================================================== */}
+
       <Header
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -268,72 +343,155 @@ useEffect(() => {
         setSoundEnabled={setSoundEnabled}
       />
 
-      {/* Main Application */}
+      {/* ======================================================
+          MAIN APPLICATION
+      ====================================================== */}
+
       <main className="flex-1 pb-16">
 
-        {/* Student Dashboard — Students Only */}
-{activeTab === 'student' && currentRole === 'student' && (
-  <StudentDashboard
-    activePasses={activePasses}
-    allPasses={allPasses}
-    soundEnabled={soundEnabled}
-  />
-)}
+        {/* ====================================================
+            ADMIN TEST MODE
+        ==================================================== */}
 
-        {/* Live Hallway Monitor */}
+        {isAdminStudentTestMode && (
+          <div className="bg-amber-400 border-b-2 border-amber-500 text-purple-950 px-4 py-2">
+
+            <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-xs">
+
+              <div className="flex items-center gap-2 font-bold">
+
+                <ShieldCheck className="w-4 h-4" />
+
+                <span>
+                  ADMIN TEST MODE
+                </span>
+
+                <span className="font-normal">
+                  — You are viewing the student hall pass
+                  experience for testing.
+                </span>
+
+              </div>
+
+              <span className="font-bold">
+                {activeStudent
+                  ? `${activeStudent.firstName} ${activeStudent.lastName}`
+                  : 'Loading test student...'}
+              </span>
+
+            </div>
+
+          </div>
+        )}
+
+        {/* ====================================================
+            STUDENT DASHBOARD
+            ====================================================
+
+            Students see their normal dashboard.
+
+            Admins may also see this dashboard while on
+            "My Hall Pass" so the admin can test the complete
+            student experience.
+        */}
+
+        {activeTab === 'student' &&
+          (
+            currentRole === 'student' ||
+            currentRole === 'admin'
+          ) && (
+
+            <StudentDashboard
+              activePasses={activePasses}
+              allPasses={allPasses}
+              soundEnabled={soundEnabled}
+            />
+
+        )}
+
+        {/* ====================================================
+            LIVE HALLWAY MONITOR
+        ==================================================== */}
+
         {activeTab === 'currently-out' &&
           currentRole !== 'student' && (
-           <CurrentlyOutDashboard
-  activePasses={activePasses}
-  teachers={teachers}
-  soundEnabled={soundEnabled}
-/>
-          )}
 
-        {/* Teacher Dashboard */}
+            <CurrentlyOutDashboard
+              activePasses={activePasses}
+              teachers={teachers}
+              soundEnabled={soundEnabled}
+            />
+
+        )}
+
+        {/* ====================================================
+            TEACHER DASHBOARD
+        ==================================================== */}
+
         {activeTab === 'teacher' &&
           currentRole !== 'student' && (
+
             <TeacherDashboard
               activePasses={activePasses}
               allPasses={allPasses}
               onOpenRequestModal={(student) =>
                 handleOpenRequestModal(student)
               }
-              onOpenStudentDetail={handleOpenStudentDetail}
+              onOpenStudentDetail={
+                handleOpenStudentDetail
+              }
               soundEnabled={soundEnabled}
             />
-          )}
 
-        {/* Admin Dashboard */}
+        )}
+
+        {/* ====================================================
+            ADMIN DASHBOARD
+        ==================================================== */}
+
         {activeTab === 'admin' &&
           currentRole === 'admin' && (
+
             <AdminDashboard
               students={students}
               teachers={teachers}
               activePasses={activePasses}
               allPasses={allPasses}
-              onOpenStudentDetail={handleOpenStudentDetail}
+              onOpenStudentDetail={
+                handleOpenStudentDetail
+              }
               onOpenHistoryTab={() =>
                 setActiveTab('history')
               }
             />
-          )}
 
-        {/* Pass History */}
+        )}
+
+        {/* ====================================================
+            PASS HISTORY
+        ==================================================== */}
+
         {activeTab === 'history' &&
           currentRole !== 'student' && (
+
             <PassHistoryView
               allPasses={allPasses}
               teachers={teachers}
             />
-          )}
+
+        )}
 
       </main>
 
-      {/* Request Pass Modal */}
+      {/* ======================================================
+          REQUEST PASS MODAL
+      ====================================================== */}
+
       <RequestPassModal
         isOpen={isRequestModalOpen}
-        onClose={() => setIsRequestModalOpen(false)}
+        onClose={() =>
+          setIsRequestModalOpen(false)
+        }
         students={students}
         preSelectedStudent={requestModalStudent}
         activeTeacher={activeTeacher}
@@ -341,30 +499,43 @@ useEffect(() => {
         soundEnabled={soundEnabled}
       />
 
-      {/* Student Detail Modal */}
+      {/* ======================================================
+          STUDENT DETAIL MODAL
+      ====================================================== */}
+
       {detailModalStudent && (
+
         <StudentDetailModal
           isOpen={!!detailModalStudent}
-          onClose={() => setDetailModalStudent(null)}
+          onClose={() =>
+            setDetailModalStudent(null)
+          }
           student={detailModalStudent}
           allPasses={allPasses}
           activePasses={activePasses}
           onRequestPass={() => {
-            const student = detailModalStudent;
+
+            const student =
+              detailModalStudent;
 
             setDetailModalStudent(null);
 
             handleOpenRequestModal(student);
           }}
         />
+
       )}
 
-      {/* Logged In Footer */}
+      {/* ======================================================
+          LOGGED-IN FOOTER
+      ====================================================== */}
+
       <footer className="bg-purple-950 text-purple-300 border-t border-purple-900 py-4 text-center text-xs mt-auto">
 
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
 
           <div className="flex items-center gap-2">
+
             <span className="font-bold text-amber-400">
               Jackson Memorial Middle School
             </span>
@@ -374,13 +545,17 @@ useEffect(() => {
             <span>
               8th Grade Hallway Pass System
             </span>
+
           </div>
 
           <div className="flex items-center gap-3 text-purple-400">
 
             <span className="flex items-center gap-1">
+
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+
               RBAC Hardened Security & Google SSO
+
             </span>
 
           </div>
@@ -396,6 +571,7 @@ useEffect(() => {
 // ============================================================
 // APP ROOT
 // ============================================================
+
 export default function App() {
   return (
     <AuthProvider>
