@@ -7,6 +7,7 @@ export type DestinationType =
   | 'Library'
   | 'Other';
 
+
 export interface DestinationConfig {
   name: DestinationType;
   icon: string;
