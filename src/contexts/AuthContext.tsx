@@ -32,7 +32,6 @@ import {
   User
 } from 'firebase/auth';
 
-
 interface AuthContextType {
 
   firebaseUser: User | null;
@@ -76,13 +75,10 @@ interface AuthContextType {
   seedData: () => Promise<void>;
 }
 
-
-
 const AuthContext =
   createContext<AuthContextType | undefined>(
     undefined
   );
-
 
 export const AuthProvider: React.FC<{
   children: React.ReactNode;
@@ -118,7 +114,6 @@ export const AuthProvider: React.FC<{
   const [authError, setAuthError] =
     useState<string | null>(null);
 
-
   // ============================================================
   // FIREBASE AUTHENTICATION
   // ============================================================
@@ -134,13 +129,11 @@ export const AuthProvider: React.FC<{
     let unsubUsers:
       (() => void) | undefined;
 
-
     const startRosterSubscriptions = () => {
 
       console.log(
         '[AuthContext] Starting authenticated data subscriptions.'
       );
-
 
       unsubStudents =
         subscribeToStudents(
@@ -175,7 +168,6 @@ export const AuthProvider: React.FC<{
           }
         );
 
-
       unsubTeachers =
         subscribeToTeachers(
           (teacherList) => {
@@ -195,7 +187,6 @@ export const AuthProvider: React.FC<{
             );
           }
         );
-
 
       unsubUsers =
         subscribeToUserProfiles(
@@ -218,7 +209,6 @@ export const AuthProvider: React.FC<{
         );
     };
 
-
     // ============================================================
     // PROCESS AUTHENTICATED USER
     // ============================================================
@@ -229,7 +219,6 @@ export const AuthProvider: React.FC<{
       ) => {
 
         setFirebaseUser(user);
-
 
         // --------------------------------------------------------
         // NO USER
@@ -263,7 +252,6 @@ export const AuthProvider: React.FC<{
           return;
         }
 
-
         // --------------------------------------------------------
         // USER IS AUTHENTICATED
         // --------------------------------------------------------
@@ -277,7 +265,6 @@ export const AuthProvider: React.FC<{
           '[AuthContext] Firebase UID:',
           user.uid
         );
-
 
         // --------------------------------------------------------
         // CHECK EMAIL
@@ -295,13 +282,11 @@ export const AuthProvider: React.FC<{
         const emailDomain =
           email.split('@')[1]?.toLowerCase();
 
-
         const isAuthorizedDomain =
           emailDomain ===
             ALLOWED_DOMAIN.toLowerCase() ||
           emailLower ===
             'jaf2jc@bearworks.jackson.sparcc.org';
-
 
         if (
           !isAuthorizedDomain &&
@@ -319,16 +304,13 @@ export const AuthProvider: React.FC<{
           return;
         }
 
-
         setAuthError(null);
-
 
         // --------------------------------------------------------
         // START SCHOOL DATA LISTENERS
         // --------------------------------------------------------
 
         startRosterSubscriptions();
-
 
         // --------------------------------------------------------
         // GET EXISTING USER PROFILE
@@ -339,7 +321,6 @@ export const AuthProvider: React.FC<{
             user.uid
           );
 
-
         // ========================================================
         // ADMIN ACCOUNT
         // ========================================================
@@ -349,7 +330,6 @@ export const AuthProvider: React.FC<{
             'jaf2jc@bearworks.jackson.sparcc.org' ||
           emailLower.includes('admin') ||
           emailLower.startsWith('principal');
-
 
         if (
           isAdminAccount
@@ -379,12 +359,10 @@ export const AuthProvider: React.FC<{
               'Main Administrative Office'
           };
 
-
           await saveUserProfile(
             profile
           );
         }
-
 
         // ========================================================
         // EXISTING USER
@@ -394,22 +372,10 @@ export const AuthProvider: React.FC<{
           profile
         ) {
 
-          /*
-           * IMPORTANT:
-           *
-           * If the user already exists but their role is
-           * missing or incorrect, we still check the teacher
-           * roster by EMAIL.
-           *
-           * This is what fixes the situation where a teacher
-           * previously became a normal user/student.
-           */
-
           const matchingTeacher =
             await getTeacherByEmail(
               emailLower
             );
-
 
           if (
             matchingTeacher
@@ -420,20 +386,10 @@ export const AuthProvider: React.FC<{
               matchingTeacher.name
             );
 
-
-            /*
-             * Attach Firebase UID to the teacher record.
-             */
-
             await attachTeacherUid(
               matchingTeacher.id,
               user.uid
             );
-
-
-            /*
-             * Upgrade the user's role to teacher.
-             */
 
             profile = {
 
@@ -459,13 +415,11 @@ export const AuthProvider: React.FC<{
                 matchingTeacher.room
             };
 
-
             await saveUserProfile(
               profile
             );
           }
         }
-
 
         // ========================================================
         // NEW USER
@@ -491,7 +445,6 @@ export const AuthProvider: React.FC<{
           let grade:
             number | undefined;
 
-
           // ------------------------------------------------------
           // CHECK TEACHER BY EMAIL
           // ------------------------------------------------------
@@ -500,7 +453,6 @@ export const AuthProvider: React.FC<{
             await getTeacherByEmail(
               emailLower
             );
-
 
           if (
             matchingTeacher
@@ -511,7 +463,6 @@ export const AuthProvider: React.FC<{
               matchingTeacher.name
             );
 
-
             role =
               'teacher';
 
@@ -521,17 +472,11 @@ export const AuthProvider: React.FC<{
             room =
               matchingTeacher.room;
 
-
-            /*
-             * Save Firebase UID directly to teacher record.
-             */
-
             await attachTeacherUid(
               matchingTeacher.id,
               user.uid
             );
           }
-
 
           // ------------------------------------------------------
           // CHECK STUDENT BY EMAIL
@@ -546,15 +491,6 @@ export const AuthProvider: React.FC<{
                   emailLower
             );
 
-
-          /*
-           * Only use student if the person was NOT identified
-           * as a teacher.
-           *
-           * This prevents an account from being accidentally
-           * changed from teacher to student.
-           */
-
           if (
             matchingStudent &&
             role !== 'teacher'
@@ -565,7 +501,6 @@ export const AuthProvider: React.FC<{
               matchingStudent.firstName,
               matchingStudent.lastName
             );
-
 
             role =
               'student';
@@ -582,7 +517,6 @@ export const AuthProvider: React.FC<{
             room =
               matchingStudent.homeroom;
           }
-
 
           // ------------------------------------------------------
           // CREATE USER PROFILE
@@ -638,18 +572,15 @@ export const AuthProvider: React.FC<{
               : {})
           };
 
-
           console.log(
             '[AuthContext] Creating user profile:',
             profile
           );
 
-
           await saveUserProfile(
             profile
           );
         }
-
 
         // ========================================================
         // SAFETY CHECK
@@ -664,7 +595,6 @@ export const AuthProvider: React.FC<{
           );
         }
 
-
         // ========================================================
         // SET CURRENT USER
         // ========================================================
@@ -677,12 +607,10 @@ export const AuthProvider: React.FC<{
           profile.role
         );
 
-
         console.log(
           '[AuthContext] Final role:',
           profile.role
         );
-
 
         // ========================================================
         // MATCH ACTIVE STUDENT
@@ -695,7 +623,6 @@ export const AuthProvider: React.FC<{
           let matchedStudent:
             Student | undefined;
 
-
           if (
             profile.studentId
           ) {
@@ -707,7 +634,6 @@ export const AuthProvider: React.FC<{
                   profile.studentId
               );
           }
-
 
           if (
             !matchedStudent
@@ -725,7 +651,6 @@ export const AuthProvider: React.FC<{
               );
           }
 
-
           if (
             matchedStudent
           ) {
@@ -735,7 +660,6 @@ export const AuthProvider: React.FC<{
             );
           }
         }
-
 
         // ========================================================
         // MATCH ACTIVE TEACHER
@@ -748,11 +672,6 @@ export const AuthProvider: React.FC<{
           let matchedTeacher:
             Teacher | undefined;
 
-
-          /*
-           * First try the saved teacher document ID.
-           */
-
           if (
             profile.teacherDocId
           ) {
@@ -764,12 +683,6 @@ export const AuthProvider: React.FC<{
                   profile.teacherDocId
               );
           }
-
-
-          /*
-           * If the listener hasn't loaded the teacher yet,
-           * look directly by email.
-           */
 
           if (
             !matchedTeacher
@@ -787,7 +700,6 @@ export const AuthProvider: React.FC<{
               );
           }
 
-
           if (
             matchedTeacher
           ) {
@@ -795,16 +707,8 @@ export const AuthProvider: React.FC<{
             setActiveTeacher(
               matchedTeacher
             );
-          }
-          else {
 
-            /*
-             * The teacher was found by email above, but the
-             * listener may not have finished loading yet.
-             *
-             * Create a temporary active teacher from the
-             * profile so the dashboard can still open.
-             */
+          } else {
 
             setActiveTeacher({
 
@@ -830,7 +734,6 @@ export const AuthProvider: React.FC<{
             });
           }
         }
-
 
         // ========================================================
         // ADMIN ACTIVE PROFILE
@@ -864,12 +767,22 @@ export const AuthProvider: React.FC<{
             department:
               'Administration'
           });
-        }
 
+          /*
+           * IMPORTANT:
+           *
+           * Admins do NOT become students.
+           *
+           * We simply give the admin a test student so the
+           * StudentDashboard can be previewed and tested.
+           *
+           * The student is selected again below whenever the
+           * roster listener finishes loading.
+           */
+        }
 
         setIsLoading(false);
       };
-
 
     // ============================================================
     // FIREBASE AUTH LISTENER
@@ -905,7 +818,6 @@ export const AuthProvider: React.FC<{
         }
       );
 
-
     // ============================================================
     // CLEANUP
     // ============================================================
@@ -935,6 +847,53 @@ export const AuthProvider: React.FC<{
 
   }, []);
 
+  // ============================================================
+  // ADMIN TEST STUDENT
+  // ============================================================
+
+  /*
+   * Once the student roster is loaded, automatically give the
+   * admin a test student if one has not already been selected.
+   *
+   * This runs separately from authentication because the roster
+   * is loaded by a real-time Firestore listener.
+   */
+
+  useEffect(() => {
+
+    if (
+      currentRole !== 'admin'
+    ) {
+      return;
+    }
+
+    if (
+      students.length === 0
+    ) {
+      return;
+    }
+
+    if (
+      !activeStudent
+    ) {
+
+      console.log(
+        '[AuthContext] Admin test mode student selected:',
+        students[0].firstName,
+        students[0].lastName,
+        students[0].studentId
+      );
+
+      setActiveStudent(
+        students[0]
+      );
+    }
+
+  }, [
+    currentRole,
+    students,
+    activeStudent
+  ]);
 
   // ============================================================
   // GOOGLE LOGIN
@@ -960,12 +919,10 @@ export const AuthProvider: React.FC<{
         const error =
           err as Error;
 
-
         console.error(
           '[AuthContext] Google Sign-In Error:',
           error
         );
-
 
         if (
           error.message?.includes(
@@ -993,7 +950,6 @@ export const AuthProvider: React.FC<{
       }
     };
 
-
   // ============================================================
   // SELECT STUDENT
   // ============================================================
@@ -1007,7 +963,6 @@ export const AuthProvider: React.FC<{
         student
       );
     };
-
 
   // ============================================================
   // SELECT TEACHER
@@ -1023,7 +978,6 @@ export const AuthProvider: React.FC<{
       );
     };
 
-
   // ============================================================
   // LOGIN AS ADMIN
   // ============================================================
@@ -1034,7 +988,6 @@ export const AuthProvider: React.FC<{
       setCurrentRole(
         'admin'
       );
-
 
       const profile:
         UserProfile = {
@@ -1063,11 +1016,9 @@ export const AuthProvider: React.FC<{
           'Main Office'
       };
 
-
       setCurrentUser(
         profile
       );
-
 
       setActiveTeacher({
 
@@ -1094,6 +1045,19 @@ export const AuthProvider: React.FC<{
           'Administration'
       });
 
+      /*
+       * If the roster has already loaded, immediately select
+       * the first student for admin test mode.
+       */
+
+      if (
+        students.length > 0
+      ) {
+
+        setActiveStudent(
+          students[0]
+        );
+      }
 
       if (
         firebaseUser
@@ -1107,7 +1071,6 @@ export const AuthProvider: React.FC<{
       }
     };
 
-
   // ============================================================
   // LOGIN AS STUDENT BY ID
   // ============================================================
@@ -1120,14 +1083,12 @@ export const AuthProvider: React.FC<{
       const cleanId =
         studentId.trim();
 
-
       const found =
         students.find(
           (student) =>
             student.studentId ===
             cleanId
         );
-
 
       if (
         found
@@ -1140,10 +1101,8 @@ export const AuthProvider: React.FC<{
         return true;
       }
 
-
       return false;
     };
-
 
   // ============================================================
   // SET ROLE
@@ -1158,7 +1117,6 @@ export const AuthProvider: React.FC<{
         role
       );
 
-
       if (
         role === 'admin'
       ) {
@@ -1167,7 +1125,6 @@ export const AuthProvider: React.FC<{
 
         return;
       }
-
 
       if (
         role === 'teacher'
@@ -1192,7 +1149,6 @@ export const AuthProvider: React.FC<{
 
         return;
       }
-
 
       if (
         role === 'student'
@@ -1219,7 +1175,6 @@ export const AuthProvider: React.FC<{
       }
     };
 
-
   // ============================================================
   // LOGOUT
   // ============================================================
@@ -1243,7 +1198,6 @@ export const AuthProvider: React.FC<{
 
       await signOutFromApp();
     };
-
 
   // ============================================================
   // SEED DATA
@@ -1274,7 +1228,6 @@ export const AuthProvider: React.FC<{
         setIsLoading(false);
       }
     };
-
 
   // ============================================================
   // PROVIDER
@@ -1332,7 +1285,6 @@ export const AuthProvider: React.FC<{
   );
 };
 
-
 // ============================================================
 // USE AUTH HOOK
 // ============================================================
@@ -1344,7 +1296,6 @@ export const useAuth = () => {
       AuthContext
     );
 
-
   if (
     !context
   ) {
@@ -1353,7 +1304,6 @@ export const useAuth = () => {
       'useAuth must be used within an AuthProvider'
     );
   }
-
 
   return context;
 };
