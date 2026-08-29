@@ -1,65 +1,116 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
+    // ============================================================
+    // HELPER FUNCTIONS
+    // ============================================================
+
     function isAuthenticated() {
       return request.auth != null;
     }
-    
+
     function userDocExists() {
-      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+      return isAuthenticated() &&
+        exists(
+          /databases/$(database)/documents/users/$(request.auth.uid)
+        );
     }
 
     function getUserData() {
-      return userDocExists() ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data : {};
+      return userDocExists()
+        ? get(
+            /databases/$(database)/documents/users/$(request.auth.uid)
+          ).data
+        : {};
     }
-    
+
     function isAdmin() {
       return isAuthenticated() && (
-        request.auth.token.admin == true || 
-        (userDocExists() && getUserData().role == 'admin') ||
-        request.auth.token.email in ['admin@bearworks.jackson.sparcc.org', 'jaf2jc@bearworks.jackson.sparcc.org']
-      );
-    }
-    
-    function isTeacher() {
-      return isAuthenticated() && (
-        isAdmin() || 
-        request.auth.token.teacher == true || 
-        (userDocExists() && getUserData().role in ['teacher', 'admin'])
-      );
-    }
-    
-    function isStudent() {
-      return isAuthenticated() && (
-        (userDocExists() && getUserData().role == 'student') || 
-        (!isTeacher() && !isAdmin())
+        request.auth.token.admin == true ||
+        (
+          userDocExists() &&
+          getUserData().role == 'admin'
+        ) ||
+        request.auth.token.email in [
+          'admin@bearworks.jackson.sparcc.org',
+          'jaf2jc@bearworks.jackson.sparcc.org'
+        ]
       );
     }
 
-    // 1. Users collection (Authentication & Roles)
+    function isTeacher() {
+      return isAuthenticated() && (
+        isAdmin() ||
+        request.auth.token.teacher == true ||
+        (
+          userDocExists() &&
+          getUserData().role in ['teacher', 'admin']
+        )
+      );
+    }
+
+    function isStudent() {
+      return isAuthenticated() && (
+        (
+          userDocExists() &&
+          getUserData().role == 'student'
+        ) ||
+        (
+          !isTeacher() &&
+          !isAdmin()
+        )
+      );
+    }
+
+
+    // ============================================================
+    // 1. USERS COLLECTION
+    // ============================================================
+
     match /users/{userId} {
-      allow read: if isAuthenticated() && (request.auth.uid == userId || isTeacher());
+
+      // Users can read their own profile.
+      // Teachers/Admins can read user profiles.
+      allow read: if isAuthenticated() && (
+        request.auth.uid == userId ||
+        isTeacher()
+      );
+
+      // ----------------------------------------------------------
+      // CREATE USER
+      // ----------------------------------------------------------
 
       allow create: if
         isAdmin() ||
+
         (
           isAuthenticated() &&
           request.auth.uid == userId &&
           request.resource.data.role == 'student'
         ) ||
+
         (
           isAuthenticated() &&
           request.auth.uid == userId &&
           request.resource.data.role == 'teacher' &&
           request.resource.data.teacherDocId != null &&
-          exists(/databases/$(database)/documents/teachers/$(request.resource.data.teacherDocId)) &&
-          get(/databases/$(database)/documents/teachers/$(request.resource.data.teacherDocId)).data.email == request.auth.token.email
+          exists(
+            /databases/$(database)/documents/teachers/$(request.resource.data.teacherDocId)
+          ) &&
+          get(
+            /databases/$(database)/documents/teachers/$(request.resource.data.teacherDocId)
+          ).data.email == request.auth.token.email
         );
+
+      // ----------------------------------------------------------
+      // UPDATE USER
+      // ----------------------------------------------------------
 
       allow update: if
         isAdmin() ||
+
         (
           isAuthenticated() &&
           request.auth.uid == userId &&
@@ -68,68 +119,292 @@ service cloud.firestore {
           request.resource.data.studentId == resource.data.studentId
         );
 
+      // ----------------------------------------------------------
+      // DELETE USER
+      // ----------------------------------------------------------
+
       allow delete: if isAdmin();
     }
 
-    // 2. Students collection (Roster)
+
+    // ============================================================
+    // 2. STUDENTS COLLECTION
+    // ============================================================
+
     match /students/{studentId} {
-      allow read: if isTeacher() || (isAuthenticated() && (
-        resource.data.email == request.auth.token.email ||
-        resource.data.studentId == getUserData().studentId ||
-        resource.id == getUserData().studentDocId
-      ));
+
+      // Teachers/Admins can read the entire roster.
+      //
+      // Students can only read their own student record.
+      allow read: if
+        isTeacher() ||
+        (
+          isAuthenticated() &&
+          (
+            resource.data.email == request.auth.token.email ||
+            resource.data.studentId == getUserData().studentId ||
+            resource.id == getUserData().studentDocId
+          )
+        );
+
+      // Only Admins can modify the roster.
       allow write: if isAdmin();
     }
 
-    // 3. Teachers collection (Faculty Directory)
+
+    // ============================================================
+    // 3. TEACHERS COLLECTION
+    // ============================================================
+
     match /teachers/{teacherId} {
+
+      // Authenticated users can read the faculty directory.
       allow read: if isAuthenticated();
+
+      // Only Admins can modify teachers.
       allow write: if isAdmin();
     }
 
-    // 4. Hall Passes collection (Live & Historic Passes)
+
+    // ============================================================
+    // 4. HALL PASSES COLLECTION
+    // ============================================================
+
     match /hallPasses/{passId} {
-      // Teachers and Admins can read all passes
-      // Students can ONLY read their own passes
-      allow read: if isTeacher() || (
-        isAuthenticated() && (
-          resource.data.studentId == getUserData().studentId ||
-          resource.data.studentDocId == getUserData().studentDocId ||
-          resource.data.studentEmail == request.auth.token.email
-        )
-      );
-      
-      // Pass creation: Teachers/Admins can create for any student; Students only for themselves
-      allow create: if isAuthenticated() && (
-        isTeacher() || (
-          (request.resource.data.studentId == getUserData().studentId || 
-           request.resource.data.studentDocId == getUserData().studentDocId ||
-           request.resource.data.studentEmail == request.auth.token.email) &&
-          request.resource.data.status == 'ACTIVE'
-        )
-      );
-      
-      // Pass updates: Students can only mark their own active pass COMPLETED
-      allow update: if isAuthenticated() && (
-        isTeacher() || (
-          (resource.data.studentId == getUserData().studentId || 
-           resource.data.studentDocId == getUserData().studentDocId ||
-           resource.data.studentEmail == request.auth.token.email) &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'timeIn', 'durationSeconds', 'durationMinutes', 'endedBy']) &&
-          request.resource.data.status == 'COMPLETED'
-        )
-      );
-      
+
+      // ----------------------------------------------------------
+      // READ
+      // ----------------------------------------------------------
+      //
+      // Teachers/Admins:
+      //   Can read all hall passes.
+      //
+      // Students:
+      //   Can only read their own hall passes.
+      //
+
+      allow read: if
+        isTeacher() ||
+        (
+          isAuthenticated() &&
+          (
+            resource.data.studentId == getUserData().studentId ||
+            resource.data.studentDocId == getUserData().studentDocId ||
+            resource.data.studentEmail == request.auth.token.email
+          )
+        );
+
+
+      // ----------------------------------------------------------
+      // CREATE
+      // ----------------------------------------------------------
+      //
+      // Teachers/Admins:
+      //   Can create passes for any student.
+      //
+      // Students:
+      //   Can only create an ACTIVE pass for themselves.
+      //
+
+      allow create: if
+        isAuthenticated() &&
+        (
+          isTeacher() ||
+
+          (
+            isStudent() &&
+            (
+              request.resource.data.studentId == getUserData().studentId ||
+              request.resource.data.studentDocId == getUserData().studentDocId ||
+              request.resource.data.studentEmail == request.auth.token.email
+            ) &&
+            request.resource.data.status == 'ACTIVE'
+          )
+        );
+
+
+      // ----------------------------------------------------------
+      // UPDATE
+      // ----------------------------------------------------------
+      //
+      // Teachers/Admins:
+      //   Can update passes.
+      //
+      // Students:
+      //   Can only complete their own ACTIVE pass.
+      //
+
+      allow update: if
+        isAuthenticated() &&
+        (
+          isTeacher() ||
+
+          (
+            isStudent() &&
+            (
+              resource.data.studentId == getUserData().studentId ||
+              resource.data.studentDocId == getUserData().studentDocId ||
+              resource.data.studentEmail == request.auth.token.email
+            ) &&
+            resource.data.status == 'ACTIVE' &&
+            request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'status',
+                'timeIn',
+                'durationSeconds',
+                'durationMinutes',
+                'endedBy'
+              ]) &&
+            request.resource.data.status == 'COMPLETED'
+          )
+        );
+
+
+      // Only Admins can delete passes.
       allow delete: if isAdmin();
     }
 
-    // 5. School Settings
+
+    // ============================================================
+    // 5. SCHOOL SETTINGS
+    // ============================================================
+
     match /settings/{docId} {
+
+      // Authenticated users can read settings.
       allow read: if isAuthenticated();
+
+      // Only Admins can modify settings.
       allow write: if isAdmin();
     }
-    
-    // Deny all other collections by default
+
+
+    // ============================================================
+    // 6. STUDENT HALL PASS REQUESTS
+    // ============================================================
+    //
+    // This collection is used when a student asks their teacher
+    // for permission to leave the classroom.
+    //
+    // Student flow:
+    //
+    //   Student
+    //      ↓
+    //   Creates PENDING request
+    //      ↓
+    //   Teacher sees request
+    //      ↓
+    //   Teacher APPROVES or DENIES
+    //      ↓
+    //   If approved, an ACTIVE hall pass is created
+    //
+    // Students:
+    //   - Can create requests for themselves.
+    //   - Can read their own requests.
+    //   - Cannot approve or deny requests.
+    //
+    // Teachers:
+    //   - Can read requests assigned to them.
+    //   - Can approve/deny requests assigned to them.
+    //
+    // Admins:
+    //   - Can read and modify everything.
+    //
+    // ============================================================
+
+    match /studentHallPassRequests/{requestId} {
+
+      // ----------------------------------------------------------
+      // READ
+      // ----------------------------------------------------------
+      //
+      // Students can only read their own requests.
+      //
+      // Teachers can read requests where they are the assigned
+      // teacher.
+      //
+      // Admins can read everything.
+      //
+
+      allow read: if
+        isAdmin() ||
+
+        (
+          isTeacher() &&
+          resource.data.teacherId == getTeacherId()
+        ) ||
+
+        (
+          isStudent() &&
+          (
+            resource.data.studentId == getUserData().studentId ||
+            resource.data.studentDocId == getUserData().studentDocId ||
+            resource.data.studentEmail == request.auth.token.email
+          )
+        );
+
+
+      // ----------------------------------------------------------
+      // CREATE
+      // ----------------------------------------------------------
+      //
+      // Students can create a request only for themselves.
+      //
+      // Teachers/Admins can also create requests if needed.
+      //
+
+      allow create: if
+        isAdmin() ||
+
+        (
+          isTeacher()
+        ) ||
+
+        (
+          isStudent() &&
+          request.resource.data.studentId == getUserData().studentId &&
+          request.resource.data.studentDocId == getUserData().studentDocId &&
+          request.resource.data.studentEmail == request.auth.token.email &&
+          request.resource.data.status == 'PENDING'
+        );
+
+
+      // ----------------------------------------------------------
+      // UPDATE
+      // ----------------------------------------------------------
+      //
+      // Students are NOT allowed to change their requests.
+      //
+      // Teachers can only update requests assigned to them.
+      //
+      // Admins can update anything.
+      //
+      // Teachers are allowed to change the request status and
+      // approval/denial timestamps.
+      //
+
+      allow update: if
+        isAdmin() ||
+
+        (
+          isTeacher() &&
+          resource.data.teacherId == getTeacherId()
+        );
+
+
+      // Only Admins can delete requests.
+      allow delete: if isAdmin();
+    }
+
+
+    // ============================================================
+    // 7. DEFAULT DENY
+    // ============================================================
+    //
+    // Any collection not explicitly listed above is denied.
+    //
+
     match /{document=**} {
       allow read, write: if false;
     }
