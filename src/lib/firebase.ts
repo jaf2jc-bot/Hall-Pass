@@ -3231,3 +3231,832 @@ export async function deleteTeacher(
     teacherRef
   );
 }
+
+// ============================================================
+// STUDENT HALL PASS APPROVAL SYSTEM
+// ============================================================
+
+export const STUDENT_HALL_PASS_REQUESTS_COLLECTION =
+  'studentHallPassRequests';
+
+
+// ============================================================
+// CREATE STUDENT HALL PASS REQUEST
+// ============================================================
+
+export async function createStudentHallPassRequest(
+  params: {
+    studentDocId: string;
+    studentId: string;
+    studentName: string;
+    studentEmail?: string;
+
+    teacherId?: string;
+    teacherName?: string;
+    teacherRoom?: string;
+
+    destination: DestinationType;
+    destinationDetails?: string;
+    notes?: string;
+  }
+): Promise<string> {
+
+  await ensureAuthenticated();
+
+  if (!params.studentDocId) {
+    throw new Error(
+      'Student profile could not be identified.'
+    );
+  }
+
+  if (!params.studentId) {
+    throw new Error(
+      'Student ID could not be identified.'
+    );
+  }
+
+  if (!params.destination) {
+    throw new Error(
+      'Please select a destination.'
+    );
+  }
+
+  // ----------------------------------------------------------
+  // CHECK FOR ACTIVE PASS
+  // ----------------------------------------------------------
+
+  const activePassQuery =
+    query(
+      collection(
+        db,
+        HALL_PASSES_COLLECTION
+      ),
+      where(
+        'studentId',
+        '==',
+        params.studentId
+      ),
+      where(
+        'status',
+        '==',
+        'ACTIVE'
+      )
+    );
+
+  const activePassSnap =
+    await getDocs(activePassQuery);
+
+  if (!activePassSnap.empty) {
+    throw new Error(
+      'You already have an active hall pass.'
+    );
+  }
+
+  // ----------------------------------------------------------
+  // CHECK FOR EXISTING PENDING REQUEST
+  // ----------------------------------------------------------
+
+  const pendingRequestQuery =
+    query(
+      collection(
+        db,
+        STUDENT_HALL_PASS_REQUESTS_COLLECTION
+      ),
+      where(
+        'studentId',
+        '==',
+        params.studentId
+      ),
+      where(
+        'status',
+        '==',
+        'PENDING'
+      )
+    );
+
+  const pendingRequestSnap =
+    await getDocs(
+      pendingRequestQuery
+    );
+
+  if (!pendingRequestSnap.empty) {
+    throw new Error(
+      'You already have a hall pass request waiting for approval.'
+    );
+  }
+
+  // ----------------------------------------------------------
+  // FIND STUDENT'S HOMEROOM TEACHER
+  // ----------------------------------------------------------
+
+  let teacherId =
+    params.teacherId || '';
+
+  let teacherName =
+    params.teacherName || '';
+
+  let teacherRoom =
+    params.teacherRoom || '';
+
+  if (!teacherId || !teacherName) {
+
+    const studentRef =
+      doc(
+        db,
+        STUDENTS_COLLECTION,
+        params.studentDocId
+      );
+
+    const studentSnap =
+      await getDoc(studentRef);
+
+    if (studentSnap.exists()) {
+
+      const studentData =
+        studentSnap.data();
+
+      const homeroom =
+        String(
+          studentData.homeroom || ''
+        ).trim();
+
+      if (homeroom) {
+
+        const teachersQuery =
+          query(
+            collection(
+              db,
+              TEACHERS_COLLECTION
+            ),
+            where(
+              'room',
+              '==',
+              homeroom
+            )
+          );
+
+        const teacherSnap =
+          await getDocs(
+            teachersQuery
+          );
+
+        if (!teacherSnap.empty) {
+
+          const teacherDoc =
+            teacherSnap.docs[0];
+
+          const teacherData =
+            teacherDoc.data();
+
+          teacherId =
+            teacherDoc.id;
+
+          teacherName =
+            String(
+              teacherData.name || ''
+            );
+
+          teacherRoom =
+            String(
+              teacherData.room ||
+              homeroom
+            );
+
+        }
+      }
+    }
+  }
+
+  // ----------------------------------------------------------
+  // FINAL VALIDATION
+  // ----------------------------------------------------------
+
+  if (!teacherId || !teacherName) {
+    throw new Error(
+      'Your teacher could not be identified. Please contact your teacher.'
+    );
+  }
+
+  const now =
+    Date.now();
+
+  // ----------------------------------------------------------
+  // CREATE PENDING REQUEST
+  // ----------------------------------------------------------
+
+  const requestData:
+    Omit<
+      StudentHallPassRequest,
+      'id'
+    > = {
+
+    studentDocId:
+      params.studentDocId,
+
+    studentId:
+      params.studentId,
+
+    studentName:
+      params.studentName,
+
+    studentEmail:
+      params.studentEmail || '',
+
+    teacherId:
+      teacherId,
+
+    teacherName:
+      teacherName,
+
+    teacherRoom:
+      teacherRoom,
+
+    destination:
+      params.destination,
+
+    destinationDetails:
+      params.destinationDetails || '',
+
+    notes:
+      params.notes || '',
+
+    status:
+      'PENDING',
+
+    createdAt:
+      now
+  };
+
+  const requestRef =
+    await addDoc(
+      collection(
+        db,
+        STUDENT_HALL_PASS_REQUESTS_COLLECTION
+      ),
+      requestData
+    );
+
+  return requestRef.id;
+}
+
+
+// ============================================================
+// STUDENT HALL PASS REQUEST LISTENER
+// ============================================================
+
+export function subscribeToStudentHallPassRequests(
+  studentId: string,
+  callback: (
+    requests: StudentHallPassRequest[]
+  ) => void
+) {
+
+  let unsubscribeSnapshot:
+    | (() => void)
+    | null = null;
+
+  let cancelled =
+    false;
+
+  ensureAuthenticated()
+    .then(() => {
+
+      if (cancelled) return;
+
+      const requestsQuery =
+        query(
+          collection(
+            db,
+            STUDENT_HALL_PASS_REQUESTS_COLLECTION
+          ),
+          where(
+            'studentId',
+            '==',
+            studentId
+          )
+        );
+
+      unsubscribeSnapshot =
+        onSnapshot(
+          requestsQuery,
+          (snapshot) => {
+
+            if (cancelled) return;
+
+            const list:
+              StudentHallPassRequest[] = [];
+
+            snapshot.forEach(
+              (docSnap) => {
+
+                const data =
+                  docSnap.data();
+
+                list.push({
+
+                  id:
+                    docSnap.id,
+
+                  studentDocId:
+                    String(
+                      data.studentDocId || ''
+                    ),
+
+                  studentId:
+                    String(
+                      data.studentId || ''
+                    ),
+
+                  studentName:
+                    String(
+                      data.studentName || ''
+                    ),
+
+                  studentEmail:
+                    data.studentEmail || '',
+
+                  teacherId:
+                    String(
+                      data.teacherId || ''
+                    ),
+
+                  teacherName:
+                    String(
+                      data.teacherName || ''
+                    ),
+
+                  teacherRoom:
+                    String(
+                      data.teacherRoom || ''
+                    ),
+
+                  destination:
+                    data.destination as DestinationType,
+
+                  destinationDetails:
+                    String(
+                      data.destinationDetails || ''
+                    ),
+
+                  notes:
+                    String(
+                      data.notes || ''
+                    ),
+
+                  status:
+                    data.status || 'PENDING',
+
+                  createdAt:
+                    Number(
+                      data.createdAt
+                    ) || Date.now(),
+
+                  approvedAt:
+                    data.approvedAt
+                      ? Number(
+                          data.approvedAt
+                        )
+                      : undefined,
+
+                  deniedAt:
+                    data.deniedAt
+                      ? Number(
+                          data.deniedAt
+                        )
+                      : undefined,
+
+                  hallPassId:
+                    data.hallPassId ||
+                    undefined
+                });
+              }
+            );
+
+            list.sort(
+              (a, b) =>
+                b.createdAt -
+                a.createdAt
+            );
+
+            callback(list);
+          },
+          (error) => {
+
+            console.error(
+              'Error subscribing to student hall pass requests:',
+              error
+            );
+
+            callback([]);
+          }
+        );
+    })
+    .catch((error) => {
+
+      console.error(
+        'Unable to authenticate before loading student hall pass requests:',
+        error
+      );
+
+      callback([]);
+    });
+
+  return () => {
+
+    cancelled = true;
+
+    if (unsubscribeSnapshot) {
+      unsubscribeSnapshot();
+    }
+  };
+}
+
+
+// ============================================================
+// TEACHER HALL PASS REQUEST LISTENER
+// ============================================================
+
+export function subscribeToTeacherHallPassRequests(
+  teacherId: string,
+  callback: (
+    requests: StudentHallPassRequest[]
+  ) => void
+) {
+
+  let unsubscribeSnapshot:
+    | (() => void)
+    | null = null;
+
+  let cancelled =
+    false;
+
+  ensureAuthenticated()
+    .then(() => {
+
+      if (cancelled) return;
+
+      const requestsQuery =
+        query(
+          collection(
+            db,
+            STUDENT_HALL_PASS_REQUESTS_COLLECTION
+          ),
+          where(
+            'teacherId',
+            '==',
+            teacherId
+          )
+        );
+
+      unsubscribeSnapshot =
+        onSnapshot(
+          requestsQuery,
+          (snapshot) => {
+
+            if (cancelled) return;
+
+            const list:
+              StudentHallPassRequest[] = [];
+
+            snapshot.forEach(
+              (docSnap) => {
+
+                const data =
+                  docSnap.data();
+
+                list.push({
+
+                  id:
+                    docSnap.id,
+
+                  studentDocId:
+                    String(
+                      data.studentDocId || ''
+                    ),
+
+                  studentId:
+                    String(
+                      data.studentId || ''
+                    ),
+
+                  studentName:
+                    String(
+                      data.studentName || ''
+                    ),
+
+                  studentEmail:
+                    data.studentEmail || '',
+
+                  teacherId:
+                    String(
+                      data.teacherId || ''
+                    ),
+
+                  teacherName:
+                    String(
+                      data.teacherName || ''
+                    ),
+
+                  teacherRoom:
+                    String(
+                      data.teacherRoom || ''
+                    ),
+
+                  destination:
+                    data.destination as DestinationType,
+
+                  destinationDetails:
+                    String(
+                      data.destinationDetails || ''
+                    ),
+
+                  notes:
+                    String(
+                      data.notes || ''
+                    ),
+
+                  status:
+                    data.status || 'PENDING',
+
+                  createdAt:
+                    Number(
+                      data.createdAt
+                    ) || Date.now(),
+
+                  approvedAt:
+                    data.approvedAt
+                      ? Number(
+                          data.approvedAt
+                        )
+                      : undefined,
+
+                  deniedAt:
+                    data.deniedAt
+                      ? Number(
+                          data.deniedAt
+                        )
+                      : undefined,
+
+                  hallPassId:
+                    data.hallPassId ||
+                    undefined
+                });
+              }
+            );
+
+            list.sort(
+              (a, b) =>
+                b.createdAt -
+                a.createdAt
+            );
+
+            callback(list);
+          },
+          (error) => {
+
+            console.error(
+              'Error subscribing to teacher hall pass requests:',
+              error
+            );
+
+            callback([]);
+          }
+        );
+    })
+    .catch((error) => {
+
+      console.error(
+        'Unable to authenticate before loading teacher hall pass requests:',
+        error
+      );
+
+      callback([]);
+    });
+
+  return () => {
+
+    cancelled = true;
+
+    if (unsubscribeSnapshot) {
+      unsubscribeSnapshot();
+    }
+  };
+}
+
+
+// ============================================================
+// APPROVE STUDENT HALL PASS REQUEST
+// ============================================================
+
+export async function approveStudentHallPassRequest(
+  requestId: string
+): Promise<string> {
+
+  await ensureAuthenticated();
+
+  const requestRef =
+    doc(
+      db,
+      STUDENT_HALL_PASS_REQUESTS_COLLECTION,
+      requestId
+    );
+
+  const requestSnap =
+    await getDoc(requestRef);
+
+  if (!requestSnap.exists()) {
+    throw new Error(
+      'Hall pass request not found.'
+    );
+  }
+
+  const request =
+    requestSnap.data() as Omit<
+      StudentHallPassRequest,
+      'id'
+    >;
+
+  if (
+    request.status !==
+    'PENDING'
+  ) {
+    throw new Error(
+      'This hall pass request has already been handled.'
+    );
+  }
+
+  // ----------------------------------------------------------
+  // CHECK FOR EXISTING ACTIVE PASS
+  // ----------------------------------------------------------
+
+  const activePassQuery =
+    query(
+      collection(
+        db,
+        HALL_PASSES_COLLECTION
+      ),
+      where(
+        'studentId',
+        '==',
+        request.studentId
+      ),
+      where(
+        'status',
+        '==',
+        'ACTIVE'
+      )
+    );
+
+  const activePassSnap =
+    await getDocs(
+      activePassQuery
+    );
+
+  if (!activePassSnap.empty) {
+    throw new Error(
+      `${request.studentName} already has an active hall pass.`
+    );
+  }
+
+  const now =
+    Date.now();
+
+  // ----------------------------------------------------------
+  // CREATE ACTIVE PASS
+  // ----------------------------------------------------------
+
+  const passData:
+    Omit<HallPass, 'id'> = {
+
+    studentDocId:
+      request.studentDocId,
+
+    studentId:
+      request.studentId,
+
+    studentName:
+      request.studentName,
+
+    studentEmail:
+      request.studentEmail,
+
+    teacher:
+      request.teacherName,
+
+    teacherUid:
+      undefined,
+
+    teacherRoom:
+      request.teacherRoom || '',
+
+    destination:
+      request.destination,
+
+    destinationDetails:
+      request.destinationDetails || '',
+
+    status:
+      'ACTIVE',
+
+    timeOut:
+      now,
+
+    timeIn:
+      null,
+
+    createdAt:
+      now,
+
+    createdBy:
+      'teacher',
+
+    notes:
+      request.notes || '',
+
+    requestId:
+      requestId,
+
+    isStudentRequest:
+      true
+  };
+
+  const passRef =
+    await addDoc(
+      collection(
+        db,
+        HALL_PASSES_COLLECTION
+      ),
+      passData
+    );
+
+  // ----------------------------------------------------------
+  // MARK REQUEST APPROVED
+  // ----------------------------------------------------------
+
+  await updateDoc(
+    requestRef,
+    {
+      status:
+        'APPROVED',
+
+      approvedAt:
+        now,
+
+      hallPassId:
+        passRef.id
+    }
+  );
+
+  return passRef.id;
+}
+
+
+// ============================================================
+// DENY STUDENT HALL PASS REQUEST
+// ============================================================
+
+export async function denyStudentHallPassRequest(
+  requestId: string
+): Promise<void> {
+
+  await ensureAuthenticated();
+
+  const requestRef =
+    doc(
+      db,
+      STUDENT_HALL_PASS_REQUESTS_COLLECTION,
+      requestId
+    );
+
+  const requestSnap =
+    await getDoc(requestRef);
+
+  if (!requestSnap.exists()) {
+    throw new Error(
+      'Hall pass request not found.'
+    );
+  }
+
+  const request =
+    requestSnap.data();
+
+  if (
+    request.status !==
+    'PENDING'
+  ) {
+    throw new Error(
+      'This hall pass request has already been handled.'
+    );
+  }
+
+  await updateDoc(
+    requestRef,
+    {
+      status:
+        'DENIED',
+
+      deniedAt:
+        Date.now()
+    }
+  );
+}
