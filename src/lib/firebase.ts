@@ -36,7 +36,8 @@ import {
   UserProfile,
   UserRole,
   ConflictPair,
-  StudentRequest
+  StudentRequest,
+  StudentHallPassRequest
 } from '../types';
 
 import {
