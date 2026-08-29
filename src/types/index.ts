@@ -46,6 +46,36 @@ export interface HallPass {
   isStudentRequest?: boolean;
 }
 
+export type StudentHallPassRequestStatus =
+  | 'PENDING'
+  | 'APPROVED'
+  | 'DENIED';
+
+export interface StudentHallPassRequest {
+  id: string;
+
+  studentDocId: string;
+  studentId: string;
+  studentName: string;
+  studentEmail?: string;
+
+  teacherId: string;
+  teacherName: string;
+  teacherRoom?: string;
+
+  destination: DestinationType;
+  destinationDetails?: string;
+  notes?: string;
+
+  status: StudentHallPassRequestStatus;
+
+  createdAt: number;
+  approvedAt?: number;
+  deniedAt?: number;
+
+  hallPassId?: string;
+}
+
 export type StudentRequestStatus =
   | 'PENDING'
   | 'COMPLETED'
