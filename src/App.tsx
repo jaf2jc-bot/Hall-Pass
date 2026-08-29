@@ -3,7 +3,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-
 import React, { useEffect, useMemo, useState } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Header } from './components/Header';
