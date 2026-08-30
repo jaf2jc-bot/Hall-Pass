@@ -6,6 +6,7 @@ import React, {
   useMemo
 } from 'react';
 
+
 import {
   UserProfile,
   UserRole,
@@ -1302,6 +1303,22 @@ export const AuthProvider: React.FC<{
   // enrollment (160, 1,000+ docs) plus every user account ever
   // created, on every page load.
   //
+  // `students` stays available to BOTH teacher and admin — both
+  // need the roster for directory tables and "request a student"
+  // dropdowns.
+  //
+  // `userProfiles` is now ADMIN-ONLY. It's only used for the
+  // Admin Dashboard's user-role management screen and to build
+  // mergedStudents' orphan-catching merge (for accounts that
+  // exist in `users` but don't have a `students` doc yet — a
+  // rare case since self-provisioning now creates that doc
+  // automatically at login). An ordinary teacher's dashboard
+  // never renders any of that, so there's no reason a teacher
+  // session should pay for downloading every user account ever
+  // created. If you have more teachers than admins (usually
+  // true), this meaningfully narrows the read cost of a typical
+  // teacher login.
+  //
   // Keyed on `currentRole`, which stays in sync with the real
   // Firestore role regardless of which login path set it (normal
   // Google sign-in, the admin dev-login shortcut, etc.) — see
@@ -1310,9 +1327,12 @@ export const AuthProvider: React.FC<{
 
   useEffect(() => {
 
+    const isPrivileged =
+      currentRole === 'teacher' ||
+      currentRole === 'admin';
+
     if (
-      currentRole !== 'teacher' &&
-      currentRole !== 'admin'
+      !isPrivileged
     ) {
 
       // Not a privileged role (or logged out) — make sure these
@@ -1325,7 +1345,7 @@ export const AuthProvider: React.FC<{
     }
 
     console.log(
-      '[AuthContext] Starting privileged roster subscriptions (students + userProfiles) for role:',
+      '[AuthContext] Starting students subscription for role:',
       currentRole
     );
 
@@ -1362,29 +1382,54 @@ export const AuthProvider: React.FC<{
         }
       );
 
-    const unsubUsers =
-      subscribeToUserProfiles(
-        (userList) => {
+    // userProfiles: admin only.
+    let unsubUsers:
+      (() => void) | undefined;
 
-          console.log(
-            '[AuthContext] User profiles loaded:',
-            userList.length
-          );
+    if (
+      currentRole === 'admin'
+    ) {
 
-          setUserProfiles(
-            [...userList].sort(
-              (a, b) =>
-                a.displayName.localeCompare(
-                  b.displayName
-                )
-            )
-          );
-        }
+      console.log(
+        '[AuthContext] Starting userProfiles subscription (admin only).'
       );
+
+      unsubUsers =
+        subscribeToUserProfiles(
+          (userList) => {
+
+            console.log(
+              '[AuthContext] User profiles loaded:',
+              userList.length
+            );
+
+            setUserProfiles(
+              [...userList].sort(
+                (a, b) =>
+                  a.displayName.localeCompare(
+                    b.displayName
+                  )
+              )
+            );
+          }
+        );
+
+    } else {
+
+      // Teacher (not admin) — make sure this stays empty rather
+      // than holding onto stale data from a previous admin
+      // session on the same device/browser.
+      setUserProfiles([]);
+    }
 
     return () => {
       unsubStudents();
-      unsubUsers();
+
+      if (
+        unsubUsers
+      ) {
+        unsubUsers();
+      }
     };
 
   }, [currentRole]);
