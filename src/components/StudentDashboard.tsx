@@ -15,7 +15,8 @@ import {
   BookOpen,
   HelpCircle,
   Send,
-  ShieldCheck
+  ShieldCheck,
+  X
 } from 'lucide-react';
 
 import { useAuth } from '../contexts/AuthContext';
@@ -29,7 +30,8 @@ import {
 
 import {
   createStudentHallPassRequest,
-  subscribeToStudentHallPassRequests
+  subscribeToStudentHallPassRequests,
+  cancelStudentHallPassRequest
 } from '../lib/firebase';
 
 import {
@@ -82,6 +84,12 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
   const [requestLoading, setRequestLoading] =
     useState(true);
+
+  const [isCancellingRequest, setIsCancellingRequest] =
+    useState(false);
+
+  const [cancelError, setCancelError] =
+    useState<string | null>(null);
 
   const [, setTick] =
     useState(0);
@@ -339,6 +347,49 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     } finally {
 
       setIsSubmitting(false);
+    }
+  };
+
+  // ============================================================
+  // CANCEL PENDING REQUEST
+  // ============================================================
+
+  const handleCancelRequest = async () => {
+
+    if (!pendingRequest) {
+      return;
+    }
+
+    setIsCancellingRequest(true);
+    setCancelError(null);
+
+    try {
+
+      await cancelStudentHallPassRequest(
+        pendingRequest.id
+      );
+
+      // The subscribeToStudentHallPassRequests listener will pick
+      // up the status change and clear pendingRequest on its own,
+      // but clearing it here too keeps the UI feeling instant
+      // instead of waiting on the round trip.
+      setPendingRequest(null);
+
+    } catch (
+      err: unknown
+    ) {
+
+      const error =
+        err as Error;
+
+      setCancelError(
+        error.message ||
+        'Unable to cancel your request. Please try again.'
+      );
+
+    } finally {
+
+      setIsCancellingRequest(false);
     }
   };
 
@@ -884,6 +935,27 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             Do not leave the classroom until your teacher approves the request.
 
           </div>
+
+          {cancelError && (
+
+            <div className="bg-rose-50 border-l-4 border-rose-500 p-3 rounded-lg text-rose-800 text-xs flex items-center gap-2 max-w-md mx-auto text-left">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0 text-rose-600" />
+              <span>{cancelError}</span>
+            </div>
+
+          )}
+
+          <button
+            type="button"
+            onClick={handleCancelRequest}
+            disabled={isCancellingRequest}
+            className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-rose-100 text-rose-700 font-bold text-sm flex items-center gap-2 mx-auto border border-slate-200 disabled:opacity-50"
+          >
+            <X className="w-4 h-4" />
+            {isCancellingRequest
+              ? 'Cancelling...'
+              : 'Cancel Request'}
+          </button>
 
         </div>
 
