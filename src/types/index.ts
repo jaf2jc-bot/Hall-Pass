@@ -8,6 +8,7 @@ export type DestinationType =
   | 'Other';
 
 
+
 export interface DestinationConfig {
   name: DestinationType;
   icon: string;
