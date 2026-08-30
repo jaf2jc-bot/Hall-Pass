@@ -12,6 +12,8 @@ import {
   deleteDoc,
   query,
   where,
+  orderBy,
+  limit,
   onSnapshot,
   writeBatch
 } from 'firebase/firestore';
@@ -366,6 +368,84 @@ export async function getStudentByEmail(
 
     console.error(
       '[Firebase] Error finding student by email:',
+      error
+    );
+
+    return null;
+  }
+}
+
+
+// ============================================================
+// GET A SINGLE STUDENT BY DOC ID (one-time read, not a listener)
+// ============================================================
+//
+// Used to resolve a logged-in student's own record without
+// requiring the full `students` roster to be subscribed —
+// see AuthContext.tsx, where only teacher/admin sessions
+// subscribe to the whole collection.
+// ============================================================
+
+export async function getStudentByDocId(
+  studentDocId: string
+): Promise<(Student & { id: string }) | null> {
+
+  try {
+
+    await ensureAuthenticated();
+
+    const studentSnap =
+      await getDoc(
+        doc(
+          db,
+          STUDENTS_COLLECTION,
+          studentDocId
+        )
+      );
+
+    if (!studentSnap.exists()) {
+      return null;
+    }
+
+    const data =
+      studentSnap.data();
+
+    return {
+      id: studentSnap.id,
+
+      studentId:
+        String(data.studentId || ''),
+
+      firstName:
+        String(data.firstName || ''),
+
+      lastName:
+        String(data.lastName || ''),
+
+      grade:
+        Number(data.grade || 0),
+
+      active:
+        data.active !== false,
+
+      email:
+        String(data.email || ''),
+
+      homeroom:
+        data.homeroom
+          ? String(data.homeroom)
+          : undefined,
+
+      periodRoom:
+        data.periodRoom
+          ? String(data.periodRoom)
+          : undefined
+    };
+
+  } catch (error) {
+
+    console.error(
+      '[Firebase] Error finding student by doc id:',
       error
     );
 
@@ -1500,12 +1580,36 @@ export function subscribeToAllPasses(
 
       if (cancelled) return;
 
-      unsubscribeSnapshot =
-        onSnapshot(
+      // ------------------------------------------------------
+      // IMPORTANT: this used to be a bare
+      // onSnapshot(collection(db, HALL_PASSES_COLLECTION), ...)
+      // with no query bound at all — the `maxLimit` parameter
+      // existed but was never actually applied. That meant every
+      // teacher/admin session read the ENTIRE, ever-growing pass
+      // history on load, which is almost certainly the single
+      // biggest driver of Firestore reads in this app on the
+      // Spark (free) plan. Bounding it here to the most recent
+      // `maxLimit` passes fixes that.
+      // ------------------------------------------------------
+
+      const boundedQuery =
+        query(
           collection(
             db,
             HALL_PASSES_COLLECTION
           ),
+          orderBy(
+            'createdAt',
+            'desc'
+          ),
+          limit(
+            maxLimit
+          )
+        );
+
+      unsubscribeSnapshot =
+        onSnapshot(
+          boundedQuery,
 
           (snapshot) => {
 
