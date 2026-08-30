@@ -72,6 +72,7 @@ const [conflictPairs, setConflictPairs] = useState<ConflictPair[]>([]);
     return () => clearInterval(interval);
   }, []);
 
+  
 // Listen for hallway conflict pairs managed by the Admin Dashboard
 useEffect(() => {
   const unsubscribe = subscribeToConflictPairs((pairs) => {
