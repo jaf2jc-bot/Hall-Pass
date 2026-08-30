@@ -52,6 +52,7 @@ interface AdminDashboardProps {
   onOpenHistoryTab: () => void;
 }
 
+
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   students,
   teachers,
