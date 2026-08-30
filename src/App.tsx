@@ -15,7 +15,6 @@ import { RequestPassModal } from './components/RequestPassModal';
 import { StudentDetailModal } from './components/StudentDetailModal';
 import { HallPass, Student } from './types';
 import {
-  subscribeToActivePasses,
   subscribeToAllPasses,
   subscribeToStudentPasses,
   subscribeToStudentActivePass
@@ -140,22 +139,31 @@ function MainApp() {
     // ----------------------------------------------------------
     // TEACHER / ADMIN
     // ----------------------------------------------------------
+    //
+    // IMPORTANT: this used to run TWO separate collection-level
+    // listeners — subscribeToActivePasses() AND
+    // subscribeToAllPasses() — each paying its own initial-read
+    // cost across the whole hallPasses collection. Since an
+    // active pass is by definition very recent (it hasn't been
+    // completed yet), it's always going to be within the
+    // "most recent N passes" window subscribeToAllPasses already
+    // fetches. So activePasses is now just derived from allPasses
+    // client-side, cutting one entire redundant listener.
 
     else if (
       currentRole === 'teacher' ||
       currentRole === 'admin'
     ) {
-      unsubActive =
-        subscribeToActivePasses(
-          (passes) => {
-            setActivePasses(passes);
-          }
-        );
-
       unsubAll =
         subscribeToAllPasses(
           (passes) => {
             setAllPasses(passes);
+
+            setActivePasses(
+              passes.filter(
+                (pass) => pass.status === 'ACTIVE'
+              )
+            );
           }
         );
     }
