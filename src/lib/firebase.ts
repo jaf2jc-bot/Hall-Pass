@@ -1,6 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 
-
 import {
   getFirestore,
   collection,
@@ -4221,6 +4220,59 @@ export async function denyStudentHallPassRequest(
         'DENIED',
 
       deniedAt:
+        Date.now()
+    }
+  );
+}
+
+
+// ============================================================
+// CANCEL STUDENT HALL PASS REQUEST (student withdraws their own)
+// ============================================================
+
+export async function cancelStudentHallPassRequest(
+  requestId: string
+): Promise<void> {
+
+  await ensureAuthenticated();
+
+  const requestRef =
+    doc(
+      db,
+      STUDENT_HALL_PASS_REQUESTS_COLLECTION,
+      requestId
+    );
+
+  const requestSnap =
+    await getDoc(requestRef);
+
+  if (!requestSnap.exists()) {
+    throw new Error(
+      'Hall pass request not found.'
+    );
+  }
+
+  const request =
+    requestSnap.data();
+
+  if (
+    request.status !==
+    'PENDING'
+  ) {
+    throw new Error(
+      'This request can no longer be cancelled — your teacher has already responded to it.'
+    );
+  }
+
+  // Only the status/cancelledAt fields are touched, matching what
+  // the firestore.rules update rule permits for a self-cancel.
+  await updateDoc(
+    requestRef,
+    {
+      status:
+        'CANCELLED',
+
+      cancelledAt:
         Date.now()
     }
   );
