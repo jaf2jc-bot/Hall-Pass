@@ -12,6 +12,30 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // ------------------------------------------------------------
+    // DOMAIN ENFORCEMENT
+    // ------------------------------------------------------------
+    //
+    // The React app (AuthContext.tsx) blocks sign-in for any email
+    // outside @bearworks.jackson.sparcc.org, but that check runs in
+    // client-side JS. Firebase's config (API key, project id) is
+    // always visible in the public JS bundle — that's normal, and
+    // it's exactly why the *rules*, not the app, need to be the
+    // real gate. Without this, anyone with any Google account could
+    // call the Firebase SDK directly (skipping the website
+    // entirely) and read the teacher directory, self-provision a
+    // fake student record, or submit hall pass requests.
+    //
+    // Keep this string in sync with ALLOWED_DOMAIN in firebase.ts.
+    // ------------------------------------------------------------
+
+    function isSchoolAccount() {
+      return isAuthenticated() &&
+        request.auth.token.email is string &&
+        request.auth.token.email.lower()
+          .matches('.*@bearworks[.]jackson[.]sparcc[.]org$');
+    }
+
     function userDocExists() {
       return isAuthenticated() &&
         exists(
@@ -97,13 +121,13 @@ service cloud.firestore {
         isAdmin() ||
 
         (
-          isAuthenticated() &&
+          isSchoolAccount() &&
           request.auth.uid == userId &&
           request.resource.data.role == 'student'
         ) ||
 
         (
-          isAuthenticated() &&
+          isSchoolAccount() &&
           request.auth.uid == userId &&
           request.resource.data.role == 'teacher' &&
           request.resource.data.teacherDocId != null &&
@@ -151,7 +175,7 @@ service cloud.firestore {
         isTeacher() ||
 
         (
-          isAuthenticated() &&
+          isSchoolAccount() &&
           (
             resource.data.email == request.auth.token.email ||
 
@@ -182,7 +206,7 @@ service cloud.firestore {
       allow create: if
         isAdmin() ||
         (
-          isAuthenticated() &&
+          isSchoolAccount() &&
           request.resource.data.email ==
             request.auth.token.email.lower()
         );
@@ -197,8 +221,11 @@ service cloud.firestore {
 
     match /teachers/{teacherId} {
 
-      // All authenticated users may read the faculty directory.
-      allow read: if isAuthenticated();
+      // Only school accounts may read the faculty directory
+      // (names, rooms, subjects, and real emails) — this used to
+      // be isAuthenticated(), which meant anyone with any Google
+      // account, not just anyone at this school, could read it.
+      allow read: if isSchoolAccount();
 
       // Only Admins can modify teachers.
       allow write: if isAdmin();
@@ -226,7 +253,7 @@ service cloud.firestore {
         isTeacher() ||
 
         (
-          isAuthenticated() &&
+          isSchoolAccount() &&
           (
             resource.data.studentId == getUserData().studentId ||
 
@@ -247,7 +274,7 @@ service cloud.firestore {
       //
 
       allow create: if
-        isAuthenticated() &&
+        isSchoolAccount() &&
         (
           isTeacher() ||
 
@@ -275,7 +302,7 @@ service cloud.firestore {
       //
 
       allow update: if
-        isAuthenticated() &&
+        isSchoolAccount() &&
         (
           isTeacher() ||
 
@@ -317,7 +344,7 @@ service cloud.firestore {
 
     match /settings/{docId} {
 
-      allow read: if isAuthenticated();
+      allow read: if isSchoolAccount();
 
       allow write: if isAdmin();
     }
@@ -424,7 +451,7 @@ service cloud.firestore {
         isTeacher() ||
 
         (
-          isAuthenticated() &&
+          isSchoolAccount() &&
           (
             resource.data.studentId == getUserData().studentId ||
 
@@ -445,7 +472,7 @@ service cloud.firestore {
       //
 
       allow create: if
-        isAuthenticated() &&
+        isSchoolAccount() &&
         (
           isTeacher() ||
 
@@ -475,7 +502,7 @@ service cloud.firestore {
         isTeacher() ||
 
         (
-          isAuthenticated() &&
+          isSchoolAccount() &&
 
           (
             resource.data.studentId == getUserData().studentId ||
