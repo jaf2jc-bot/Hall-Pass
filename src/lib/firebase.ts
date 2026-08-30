@@ -1761,7 +1761,8 @@ export function subscribeToAllPasses(
 
 export function subscribeToStudentPasses(
   studentId: string,
-  callback: (passes: HallPass[]) => void
+  callback: (passes: HallPass[]) => void,
+  maxLimit = 100
 ) {
 
   let unsubscribeSnapshot:
@@ -1775,6 +1776,13 @@ export function subscribeToStudentPasses(
 
       if (cancelled) return;
 
+      // IMPORTANT: previously had no orderBy/limit at all — every
+      // read here was the student's ENTIRE pass history, with
+      // only a client-side .slice() afterward. Over a school
+      // year a single student can easily rack up hundreds of
+      // hallway trips, so this was reading far more than the
+      // dashboard ever displays. Bounding it here to the most
+      // recent `maxLimit` passes fixes that at the source.
       const q =
         query(
           collection(
@@ -1785,6 +1793,13 @@ export function subscribeToStudentPasses(
             'studentId',
             '==',
             studentId
+          ),
+          orderBy(
+            'timeOut',
+            'desc'
+          ),
+          limit(
+            maxLimit
           )
         );
 
@@ -2644,7 +2659,8 @@ export async function createStudentRequest(
 export function subscribeToStudentRequests(
   callback: (
     requests: StudentRequest[]
-  ) => void
+  ) => void,
+  maxLimit = 200
 ) {
 
   let unsubscribeSnapshot:
@@ -2658,12 +2674,32 @@ export function subscribeToStudentRequests(
 
       if (cancelled) return;
 
-      unsubscribeSnapshot =
-        onSnapshot(
+      // IMPORTANT: this was previously a bare
+      // onSnapshot(collection(db, STUDENT_REQUESTS_COLLECTION))
+      // with no query at all — the exact same unbounded-read bug
+      // as the original subscribeToAllPasses. Every teacher/admin
+      // dashboard load read the entire, ever-growing collection
+      // of teacher-to-teacher student requests. Bounded here to
+      // the most recent `maxLimit`, same fix pattern.
+
+      const boundedQuery =
+        query(
           collection(
             db,
             STUDENT_REQUESTS_COLLECTION
           ),
+          orderBy(
+            'createdAt',
+            'desc'
+          ),
+          limit(
+            maxLimit
+          )
+        );
+
+      unsubscribeSnapshot =
+        onSnapshot(
+          boundedQuery,
 
           (snapshot) => {
 
@@ -3747,6 +3783,14 @@ export function subscribeToStudentHallPassRequests(
 
       if (cancelled) return;
 
+      // NOTE: already scoped to a single student via the
+      // studentId filter, so this was never a significant read
+      // cost the way the campus-wide collections were.
+      // Deliberately NOT adding an orderBy here — combining it
+      // with the existing `where` on a different field would
+      // require a Firestore composite index that doesn't
+      // auto-create, and the read savings on an already-narrow,
+      // single-student query aren't worth that deployment risk.
       const requestsQuery =
         query(
           collection(
