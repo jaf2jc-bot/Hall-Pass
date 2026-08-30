@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   Shield, 
   Users,  
@@ -24,10 +24,8 @@ import {
   updateTeacher,
   deleteTeacher,
   seedInitialJMMSData,
-  subscribeToUserProfiles,
   updateUserRole,
   saveUserProfile,
-  subscribeToConflictPairs,
   addConflictPair,
   deleteConflictPair
 } from '../lib/firebase';
@@ -38,6 +36,18 @@ interface AdminDashboardProps {
   teachers: Teacher[];
   activePasses: HallPass[];
   allPasses: HallPass[];
+  // Passed down from AuthContext (via App.tsx) instead of this
+  // component subscribing to the collection itself — it used to
+  // run its own separate subscribeToUserProfiles() listener here,
+  // completely independent from the one AuthContext already
+  // maintains, meaning every admin session read the entire
+  // userProfiles collection TWICE at once for no reason.
+  userProfiles: UserProfile[];
+  // Same story: this used to run its own subscribeToConflictPairs()
+  // listener, duplicating the one CurrentlyOutDashboard also runs
+  // independently. Both now receive it as a prop from a single
+  // subscription centralized in App.tsx.
+  conflictPairs: ConflictPair[];
   onOpenStudentDetail: (student: Student) => void;
   onOpenHistoryTab: () => void;
 }
@@ -47,6 +57,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   teachers,
   activePasses,
   allPasses,
+  userProfiles: users,
+  conflictPairs,
   onOpenStudentDetail,
   onOpenHistoryTab
 }) => {
@@ -56,11 +68,10 @@ const [adminTab, setAdminTab] = useState<
 
 const [studentSearch, setStudentSearch] = useState('');
 const [teacherSearch, setTeacherSearch] = useState('');
-const [users, setUsers] = useState<UserProfile[]>([]);
 const [userSearch, setUserSearch] = useState('');
 
-// Hallway Conflict Pair State
-const [conflictPairs, setConflictPairs] = useState<ConflictPair[]>([]);
+// Hallway Conflict Pair UI state (the conflictPairs DATA itself
+// is a prop now — see the note on AdminDashboardProps above).
 const [showAddConflictPair, setShowAddConflictPair] = useState(false);
 const [conflictStudent1, setConflictStudent1] = useState('');
 const [conflictStudent2, setConflictStudent2] = useState('');
@@ -87,23 +98,6 @@ const [conflictStudent2, setConflictStudent2] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
 
   const stats = computeStatistics(allPasses);
-  // Subscribe to all registered user profiles
-React.useEffect(() => {
-  const unsubscribe = subscribeToUserProfiles((userList) => {
-    setUsers(userList);
-  });
-
-  return () => unsubscribe();
-}, []);
-
-  // Real-time hallway conflict pair listener
-useEffect(() => {
-  const unsubscribe = subscribeToConflictPairs((pairs) => {
-    setConflictPairs(pairs);
-  });
-
-  return () => unsubscribe();
-}, []);
 
   // Filter students
   const filteredStudents = students.filter((s) => {
