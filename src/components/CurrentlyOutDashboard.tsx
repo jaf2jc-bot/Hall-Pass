@@ -30,8 +30,7 @@ import {
 } from '../types';
 import {
   endHallPass,
-  flagHallPass,
-  subscribeToConflictPairs
+  flagHallPass
 } from '../lib/firebase';
 import {
   formatElapsedTime,
@@ -47,12 +46,20 @@ interface CurrentlyOutDashboardProps {
   activePasses: HallPass[];
   teachers: Teacher[];
   soundEnabled: boolean;
+  // Passed down from a single subscription in App.tsx instead of
+  // subscribing here directly — this used to run its own
+  // subscribeToConflictPairs() listener, completely independent
+  // from the one AdminDashboard also ran, meaning the entire
+  // conflictPairs collection was read twice at once whenever
+  // both dashboards were in use.
+  conflictPairs: ConflictPair[];
 }
 
 export const CurrentlyOutDashboard: React.FC<CurrentlyOutDashboardProps> = ({
   activePasses,
   teachers,
-  soundEnabled
+  soundEnabled,
+  conflictPairs
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDestination, setFilterDestination] = useState<string>('ALL');
@@ -61,26 +68,13 @@ export const CurrentlyOutDashboard: React.FC<CurrentlyOutDashboardProps> = ({
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   
   const previousConflictCount = React.useRef(0);
-  
-// Conflict pairs managed from the Admin Dashboard
-const [conflictPairs, setConflictPairs] = useState<ConflictPair[]>([]);
-  
+
   // Live timer tick every second for smooth, real-time counters
   const [, setTick] = useState(0);
   useEffect(() => {
     const interval = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(interval);
   }, []);
-
-  
-// Listen for hallway conflict pairs managed by the Admin Dashboard
-useEffect(() => {
-  const unsubscribe = subscribeToConflictPairs((pairs) => {
-    setConflictPairs(pairs);
-  });
-
-  return () => unsubscribe();
-}, []);
   
   // Filtered passes
   const filteredPasses = activePasses.filter((pass) => {
