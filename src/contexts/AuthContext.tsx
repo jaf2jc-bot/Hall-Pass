@@ -6,6 +6,7 @@ import React, {
   useMemo
 } from 'react';
 
+
 import {
   UserProfile,
   UserRole,
@@ -117,6 +118,15 @@ export const AuthProvider: React.FC<{
   const [students, setStudents] =
     useState<Student[]>([]);
 
+  const [teachers, setTeachers] =
+    useState<Teacher[]>([]);
+
+  const [userProfiles, setUserProfiles] =
+    useState<UserProfile[]>([]);
+
+  const [activeStudent, setActiveStudent] =
+    useState<Student | null>(null);
+
   // ============================================================
   // MERGED STUDENT DIRECTORY (students collection + users collection)
   // ============================================================
@@ -130,11 +140,17 @@ export const AuthProvider: React.FC<{
   // those people are invisible in every "select a student"
   // dropdown across the app even though they can log in fine.
   //
+  // IMPORTANT: this must be declared AFTER both `students` and
+  // `userProfiles` above, since its dependency array references
+  // both. Declaring it earlier throws
+  // "Cannot access '<var>' before initialization" — the
+  // dependency array is evaluated immediately when useMemo() is
+  // called, and `const` bindings are in the temporal dead zone
+  // until their own declaration line runs.
+  //
   // This does NOT create any new Firestore documents — it just
   // presents a synthetic Student object, built from their
-  // UserProfile, everywhere the real roster is used. If you want
-  // it to become a permanent roster record instead, use the
-  // "promote"/edit tooling on the student directory.
+  // UserProfile, everywhere the real roster is used.
   // ============================================================
 
   const mergedStudents =
@@ -282,14 +298,6 @@ export const AuthProvider: React.FC<{
 
     }, [students, userProfiles]);
 
-  const [teachers, setTeachers] =
-    useState<Teacher[]>([]);
-
-  const [userProfiles, setUserProfiles] =
-    useState<UserProfile[]>([]);
-
-  const [activeStudent, setActiveStudent] =
-    useState<Student | null>(null);
 
   const [activeTeacher, setActiveTeacher] =
     useState<Teacher | null>(null);
