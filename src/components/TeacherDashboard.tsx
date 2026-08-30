@@ -1764,98 +1764,112 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
         ) : (
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="rounded-xl border border-slate-200 overflow-hidden">
 
-            {myClassroomActivePasses.map((pass) => {
+            <div className="hidden lg:grid grid-cols-[2fr_1.3fr_2fr_auto] gap-4 items-center px-5 py-2.5 bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
+              <div>Student</div>
+              <div>Status</div>
+              <div>Destination</div>
+              <div className="text-right">Time Out / Actions</div>
+            </div>
 
-              const urgency =
-                getPassUrgency(pass.timeOut);
+            <div className="divide-y divide-slate-100">
 
-              const isEnding =
-                endingPassId === pass.id;
+              {myClassroomActivePasses.map((pass) => {
 
-              return (
+                const urgency =
+                  getPassUrgency(pass.timeOut);
 
-                <div
-                  key={pass.id}
-                  className={`p-4 rounded-xl border-2 shadow-sm flex flex-col justify-between ${urgency.cardClass}`}
-                >
+                const isEnding =
+                  endingPassId === pass.id;
 
-                  <div className="flex items-start justify-between mb-2">
+                return (
 
-                    <div>
+                  <div
+                    key={pass.id}
+                    className="grid grid-cols-1 lg:grid-cols-[2fr_1.3fr_2fr_auto] gap-3 lg:gap-4 items-center px-4 sm:px-5 py-4"
+                  >
 
-                      <h4 className="font-extrabold text-slate-900 text-base">
-                        {pass.studentName}
-                      </h4>
-
-                      <span className="text-xs text-slate-500 font-mono">
-                        ID #{pass.studentId}
-                      </span>
-
+                    {/* Student */}
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 shrink-0 rounded-xl bg-purple-950 text-amber-300 font-black text-sm flex items-center justify-center shadow">
+                        {pass.studentName
+                          .split(' ')
+                          .map((n) => n[0])
+                          .join('')
+                          .slice(0, 2)}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-bold text-sm sm:text-base text-slate-900 truncate">
+                          {pass.studentName}
+                        </div>
+                        <div className="text-xs text-slate-500 font-mono">
+                          ID #{pass.studentId}
+                        </div>
+                      </div>
                     </div>
 
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${urgency.badgeClass}`}
-                    >
-                      {urgency.label}
-                    </span>
-
-                  </div>
-
-                  <div className="bg-white/80 p-2.5 rounded-lg border border-slate-200/80 mb-3 text-xs">
-
-                    <span className="font-bold text-purple-950 flex items-center gap-1.5">
-                      {pass.destination}
-                    </span>
-
-                    {pass.destinationDetails && (
-                      <span className="text-slate-600 italic block mt-0.5 text-[11px]">
-                        "{pass.destinationDetails}"
+                    {/* Status */}
+                    <div className="min-w-0">
+                      <div className="text-[10px] uppercase tracking-wider font-bold text-slate-400 lg:hidden">
+                        Status
+                      </div>
+                      <span
+                        className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-bold whitespace-nowrap ${urgency.badgeClass}`}
+                      >
+                        {urgency.label}
                       </span>
-                    )}
-
-                  </div>
-
-                  <div className="flex items-center justify-between pt-2 border-t border-slate-200/60">
-
-                    <div>
-
-                      <div className="text-[10px] text-slate-500 font-bold uppercase">
-                        Time Out
-                      </div>
-
-                      <div className="font-mono font-bold text-purple-950 text-lg">
-                        {formatElapsedTime(pass.timeOut)}
-                      </div>
-
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleEndPass(pass.id)
-                      }
-                      disabled={isEnding}
-                      className="px-3 py-1.5 bg-purple-900 hover:bg-purple-950 text-white font-bold text-xs rounded-lg shadow flex items-center gap-1.5 active:scale-95"
-                    >
+                    {/* Destination */}
+                    <div className="min-w-0">
+                      <div className="text-[10px] uppercase tracking-wider font-bold text-slate-400 lg:hidden">
+                        Destination
+                      </div>
+                      <div className="text-sm font-semibold text-purple-950 truncate">
+                        {pass.destination}
+                      </div>
+                      {pass.destinationDetails && (
+                        <div className="text-xs text-slate-500 italic truncate">
+                          "{pass.destinationDetails}"
+                        </div>
+                      )}
+                    </div>
 
-                      <RotateCcw className="w-3.5 h-3.5 text-amber-300" />
+                    {/* Time out + action */}
+                    <div className="flex items-center justify-start lg:justify-end gap-3">
+                      <div className="text-right">
+                        <div className="text-[10px] text-slate-500 font-bold uppercase">
+                          Time Out
+                        </div>
+                        <div className="font-mono font-bold text-purple-950 text-base">
+                          {formatElapsedTime(pass.timeOut)}
+                        </div>
+                      </div>
 
-                      <span>
-                        {isEnding
-                          ? 'Ending...'
-                          : 'End Pass'}
-                      </span>
-
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleEndPass(pass.id)
+                        }
+                        disabled={isEnding}
+                        className="px-3 py-2 bg-purple-900 hover:bg-purple-950 text-white font-bold text-xs rounded-lg shadow flex items-center gap-1.5 active:scale-95 whitespace-nowrap"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5 text-amber-300" />
+                        <span>
+                          {isEnding
+                            ? 'Ending...'
+                            : 'End Pass'}
+                        </span>
+                      </button>
+                    </div>
 
                   </div>
 
-                </div>
+                );
+              })}
 
-              );
-            })}
+            </div>
 
           </div>
 
