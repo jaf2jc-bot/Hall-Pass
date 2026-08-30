@@ -6,6 +6,7 @@ import React, {
   useMemo
 } from 'react';
 
+
 import {
   UserProfile,
   UserRole,
@@ -21,6 +22,7 @@ import {
   saveUserProfile,
   getTeacherByEmail,
   getStudentByEmail,
+  getStudentByDocId,
   attachTeacherUid,
   addTeacher,
   addStudent,
@@ -313,53 +315,34 @@ export const AuthProvider: React.FC<{
 
   useEffect(() => {
 
-    let unsubStudents:
-      (() => void) | undefined;
-
     let unsubTeachers:
       (() => void) | undefined;
 
-    let unsubUsers:
-      (() => void) | undefined;
+    // ============================================================
+    // ALWAYS-ON SUBSCRIPTION: TEACHERS ONLY
+    // ============================================================
+    //
+    // Every role needs the teacher list (students pick a
+    // destination teacher, teachers pick who to request a
+    // student from, admins manage the directory) and it's a
+    // small collection regardless of school size, so it's cheap
+    // to keep subscribed for everyone.
+    //
+    // `students` and `userProfiles` are NOT started here anymore
+    // — see the role-gated effect further down. Those two
+    // collections scale with enrollment (160, 1,000+ docs) and
+    // only teacher/admin dashboards actually use them. Every
+    // student session used to pull the ENTIRE roster + every
+    // user account on login; on Firestore's Spark (free) plan
+    // that was almost certainly the single largest source of
+    // reads in the whole app.
+    // ============================================================
 
-    const startRosterSubscriptions = () => {
+    const startTeachersSubscription = () => {
 
       console.log(
-        '[AuthContext] Starting authenticated data subscriptions.'
+        '[AuthContext] Starting teachers subscription.'
       );
-
-      unsubStudents =
-        subscribeToStudents(
-          (studentList) => {
-
-            console.log(
-              '[AuthContext] Students loaded:',
-              studentList.length
-            );
-
-            setStudents(
-              [...studentList].sort(
-                (a, b) => {
-
-                  const lastNameCompare =
-                    a.lastName.localeCompare(
-                      b.lastName
-                    );
-
-                  if (
-                    lastNameCompare !== 0
-                  ) {
-                    return lastNameCompare;
-                  }
-
-                  return a.firstName.localeCompare(
-                    b.firstName
-                  );
-                }
-              )
-            );
-          }
-        );
 
       unsubTeachers =
         subscribeToTeachers(
@@ -375,26 +358,6 @@ export const AuthProvider: React.FC<{
                 (a, b) =>
                   a.name.localeCompare(
                     b.name
-                  )
-              )
-            );
-          }
-        );
-
-      unsubUsers =
-        subscribeToUserProfiles(
-          (userList) => {
-
-            console.log(
-              '[AuthContext] User profiles loaded:',
-              userList.length
-            );
-
-            setUserProfiles(
-              [...userList].sort(
-                (a, b) =>
-                  a.displayName.localeCompare(
-                    b.displayName
                   )
               )
             );
@@ -503,7 +466,7 @@ export const AuthProvider: React.FC<{
         // START SCHOOL DATA LISTENERS
         // --------------------------------------------------------
 
-        startRosterSubscriptions();
+        startTeachersSubscription();
 
         // --------------------------------------------------------
         // GET EXISTING USER PROFILE
@@ -1036,39 +999,42 @@ export const AuthProvider: React.FC<{
         // ========================================================
         // MATCH ACTIVE STUDENT
         // ========================================================
+        //
+        // IMPORTANT: this used to search the bulk `students`
+        // array via students.find(...) — but that array is no
+        // longer subscribed for student-role sessions (see the
+        // role-gated roster effect above), so it would always be
+        // empty here for a real student login. Resolving this
+        // with a single direct document read instead means a
+        // student's own record loads correctly without requiring
+        // the whole roster.
+        // ========================================================
 
         if (
           profile.role === 'student'
         ) {
 
           let matchedStudent:
-            Student | undefined;
+            (Student & { id: string }) | null = null;
 
           if (
-            profile.studentId
+            profile.studentDocId
           ) {
 
             matchedStudent =
-              students.find(
-                (student) =>
-                  student.studentId ===
-                  profile.studentId
+              await getStudentByDocId(
+                profile.studentDocId
               );
           }
 
           if (
-            !matchedStudent
+            !matchedStudent &&
+            profile.email
           ) {
 
             matchedStudent =
-              students.find(
-                (student) =>
-                  student.email &&
-                  profile.email &&
-                  student.email
-                    .toLowerCase() ===
-                    profile.email
-                      .toLowerCase()
+              await getStudentByEmail(
+                profile.email
               );
           }
 
@@ -1315,25 +1281,114 @@ export const AuthProvider: React.FC<{
       unsubAuth();
 
       if (
-        unsubStudents
-      ) {
-        unsubStudents();
-      }
-
-      if (
         unsubTeachers
       ) {
         unsubTeachers();
       }
-
-      if (
-        unsubUsers
-      ) {
-        unsubUsers();
-      }
     };
 
   }, []);
+
+  // ============================================================
+  // ROLE-GATED SUBSCRIPTIONS: STUDENTS + USER PROFILES
+  // ============================================================
+  //
+  // Only teacher/admin sessions actually use the full roster
+  // (student directory tables, "request a student" dropdowns,
+  // user-role management) or the full user-profile list (used to
+  // build mergedStudents). A plain student never renders any of
+  // that, so there's no reason for their session to pay for
+  // those reads — this used to run unconditionally for everyone,
+  // meaning every single student login downloaded the entire
+  // enrollment (160, 1,000+ docs) plus every user account ever
+  // created, on every page load.
+  //
+  // Keyed on `currentRole`, which stays in sync with the real
+  // Firestore role regardless of which login path set it (normal
+  // Google sign-in, the admin dev-login shortcut, etc.) — see
+  // loginAsAdmin() and processAuthenticatedUser() above.
+  // ============================================================
+
+  useEffect(() => {
+
+    if (
+      currentRole !== 'teacher' &&
+      currentRole !== 'admin'
+    ) {
+
+      // Not a privileged role (or logged out) — make sure these
+      // stay empty rather than holding onto stale data from a
+      // previous session/role.
+      setStudents([]);
+      setUserProfiles([]);
+
+      return;
+    }
+
+    console.log(
+      '[AuthContext] Starting privileged roster subscriptions (students + userProfiles) for role:',
+      currentRole
+    );
+
+    const unsubStudents =
+      subscribeToStudents(
+        (studentList) => {
+
+          console.log(
+            '[AuthContext] Students loaded:',
+            studentList.length
+          );
+
+          setStudents(
+            [...studentList].sort(
+              (a, b) => {
+
+                const lastNameCompare =
+                  a.lastName.localeCompare(
+                    b.lastName
+                  );
+
+                if (
+                  lastNameCompare !== 0
+                ) {
+                  return lastNameCompare;
+                }
+
+                return a.firstName.localeCompare(
+                  b.firstName
+                );
+              }
+            )
+          );
+        }
+      );
+
+    const unsubUsers =
+      subscribeToUserProfiles(
+        (userList) => {
+
+          console.log(
+            '[AuthContext] User profiles loaded:',
+            userList.length
+          );
+
+          setUserProfiles(
+            [...userList].sort(
+              (a, b) =>
+                a.displayName.localeCompare(
+                  b.displayName
+                )
+            )
+          );
+        }
+      );
+
+    return () => {
+      unsubStudents();
+      unsubUsers();
+    };
+
+  }, [currentRole]);
 
   // ============================================================
   // ADMIN TEST STUDENT
