@@ -82,6 +82,23 @@ export function formatDateShort(timestampMs: number): string {
   return date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+// ============================================================
+// PASS URGENCY THRESHOLDS
+// ============================================================
+//
+// Single source of truth for "how long is too long out of class."
+// Both getPassUrgency() and computeStatistics()'s overdue count
+// read from these instead of each hardcoding their own cutoff,
+// so the two can never drift out of sync again.
+//
+//   < NORMAL_MAX_MINUTES               -> normal
+//   NORMAL_MAX_MINUTES .. EXTENDED_MAX -> extended
+//   > EXTENDED_MAX_MINUTES             -> overdue
+// ============================================================
+
+export const PASS_NORMAL_MAX_MINUTES = 5;
+export const PASS_EXTENDED_MAX_MINUTES = 8;
+
 export function getPassUrgency(timeOutMs: number): {
   level: 'normal' | 'warning' | 'overdue';
   minutesOut: number;
@@ -92,20 +109,20 @@ export function getPassUrgency(timeOutMs: number): {
   const diffMs = Date.now() - timeOutMs;
   const minutesOut = Math.floor(diffMs / (60 * 1000));
 
-  if (minutesOut >= 12) {
+  if (minutesOut > PASS_EXTENDED_MAX_MINUTES) {
     return {
       level: 'overdue',
       minutesOut,
-      label: 'Overdue (12+ min)',
+      label: `Overdue (${PASS_EXTENDED_MAX_MINUTES + 1}+ min)`,
       badgeClass: 'bg-rose-500 text-white font-semibold animate-pulse',
       cardClass: 'border-rose-400 bg-rose-50/70 shadow-rose-100'
     };
   }
-  if (minutesOut >= 7) {
+  if (minutesOut >= PASS_NORMAL_MAX_MINUTES) {
     return {
       level: 'warning',
       minutesOut,
-      label: 'Extended (7+ min)',
+      label: `Extended (${PASS_NORMAL_MAX_MINUTES}-${PASS_EXTENDED_MAX_MINUTES} min)`,
       badgeClass: 'bg-amber-500 text-white font-semibold',
       cardClass: 'border-amber-400 bg-amber-50/50 shadow-amber-100'
     };
@@ -132,7 +149,7 @@ export function computeStatistics(allPasses: HallPass[]): PassStatistics {
 
   let overdueCount = 0;
   activePasses.forEach(p => {
-    if (Date.now() - p.timeOut > 12 * 60 * 1000) {
+    if (Date.now() - p.timeOut > PASS_EXTENDED_MAX_MINUTES * 60 * 1000) {
       overdueCount++;
     }
   });
