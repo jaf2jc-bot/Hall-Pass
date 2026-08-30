@@ -2,6 +2,9 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 
 import {
   getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
   collection,
   doc,
   getDocs,
@@ -67,14 +70,79 @@ const app =
     : getApp();
 
 
-// Use designated Firestore database if supplied.
+// ============================================================
+// FIRESTORE WITH OFFLINE PERSISTENCE
+// ============================================================
+//
+// persistentLocalCache stores query results in IndexedDB. On a
+// repeat visit (tab refresh, reopening the app, etc.) the SDK
+// can serve already-cached documents immediately and only needs
+// to sync whatever actually changed since last time, instead of
+// re-reading every matching document from the server again. This
+// doesn't reduce the very first load's read cost, but it can
+// meaningfully cut reads across a day of repeated refreshes —
+// exactly the kind of usage pattern a school's flaky wifi and
+// devices sleeping/reloading tends to produce.
+//
+// persistentMultipleTabManager lets multiple open tabs of the
+// app on the same device share one persistence layer instead of
+// only the first tab getting persistence and the rest silently
+// falling back to memory-only.
+//
+// initializeFirestore() can only be called once per app instance
+// — if this module gets re-evaluated (e.g. certain dev/HMR
+// setups), fall back to the plain getFirestore() call, which
+// just reuses whatever instance already exists.
+// ============================================================
+
+function createFirestoreInstance() {
+
+  const dbId =
+    firebaseConfigData.firestoreDatabaseId;
+
+  try {
+
+    return dbId
+      ? initializeFirestore(
+          app,
+          {
+            localCache:
+              persistentLocalCache({
+                tabManager:
+                  persistentMultipleTabManager()
+              })
+          },
+          dbId
+        )
+      : initializeFirestore(
+          app,
+          {
+            localCache:
+              persistentLocalCache({
+                tabManager:
+                  persistentMultipleTabManager()
+              })
+          }
+        );
+
+  } catch (error) {
+
+    console.warn(
+      '[Firebase] Firestore was already initialized elsewhere — reusing the existing instance instead of enabling persistence a second time.',
+      error
+    );
+
+    return dbId
+      ? getFirestore(
+          app,
+          dbId
+        )
+      : getFirestore(app);
+  }
+}
+
 export const db =
-  firebaseConfigData.firestoreDatabaseId
-    ? getFirestore(
-        app,
-        firebaseConfigData.firestoreDatabaseId
-      )
-    : getFirestore(app);
+  createFirestoreInstance();
 
 export const auth = getAuth(app);
 
@@ -1396,168 +1464,16 @@ export function subscribeToTeachers(
 
 
 // ============================================================
-// ACTIVE HALL PASSES
+// NOTE: subscribeToActivePasses() was removed.
 // ============================================================
-
-export function subscribeToActivePasses(
-  callback: (passes: HallPass[]) => void
-) {
-
-  let unsubscribeSnapshot:
-    | (() => void)
-    | null = null;
-
-  let cancelled = false;
-
-  ensureAuthenticated()
-    .then(() => {
-
-      if (cancelled) return;
-
-      const q =
-        query(
-          collection(
-            db,
-            HALL_PASSES_COLLECTION
-          ),
-          where(
-            'status',
-            '==',
-            'ACTIVE'
-          )
-        );
-
-      unsubscribeSnapshot =
-        onSnapshot(
-          q,
-
-          (snapshot) => {
-
-            const list: HallPass[] = [];
-
-            snapshot.forEach(
-              (docSnap) => {
-
-                const data =
-                  docSnap.data();
-
-                list.push({
-
-                  id:
-                    docSnap.id,
-
-                  studentDocId:
-                    data.studentDocId || '',
-
-                  studentId:
-                    data.studentId || '',
-
-                  studentName:
-                    data.studentName || '',
-
-                  teacher:
-                    data.teacher || '',
-
-                  teacherUid:
-                    data.teacherUid || '',
-
-                  teacherRoom:
-                    data.teacherRoom || '',
-
-                  destination:
-                    data.destination ||
-                    'Restroom',
-
-                  destinationDetails:
-                    data.destinationDetails ||
-                    '',
-
-                  status:
-                    data.status ||
-                    'ACTIVE',
-
-                  timeOut:
-                    Number(
-                      data.timeOut
-                    ) || Date.now(),
-
-                  timeIn:
-                    data.timeIn
-                      ? Number(
-                          data.timeIn
-                        )
-                      : null,
-
-                  durationSeconds:
-                    data.durationSeconds ||
-                    0,
-
-                  durationMinutes:
-                    data.durationMinutes ||
-                    0,
-
-                  createdAt:
-                    Number(
-                      data.createdAt
-                    ) || Date.now(),
-
-                  createdBy:
-                    data.createdBy ||
-                    'student',
-
-                  endedBy:
-                    data.endedBy,
-
-                  notes:
-                    data.notes || '',
-
-                  flagged:
-                    !!data.flagged
-                });
-              }
-            );
-
-            list.sort(
-              (a, b) =>
-                b.timeOut -
-                a.timeOut
-            );
-
-            callback(list);
-          },
-
-          (err) => {
-
-            console.error(
-              'Error subscribing to active passes:',
-              err
-            );
-
-            callback([]);
-          }
-        );
-
-    })
-    .catch((err) => {
-
-      console.error(
-        'Unable to authenticate before loading active passes:',
-        err
-      );
-
-      callback([]);
-    });
-
-
-  return () => {
-
-    cancelled = true;
-
-    if (unsubscribeSnapshot) {
-      unsubscribeSnapshot();
-    }
-  };
-}
+//
+// Teacher/admin sessions used to run this as a second, fully
+// redundant collection-level listener alongside
+// subscribeToAllPasses(). Since an active pass is always recent
+// by definition, App.tsx now derives activePasses by filtering
+// the results of subscribeToAllPasses() client-side instead —
+// same data, one fewer live listener per session.
+// ============================================================
 
 
 // ============================================================
