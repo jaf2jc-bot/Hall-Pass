@@ -33,7 +33,15 @@ import {
   flagHallPass,
   subscribeToConflictPairs
 } from '../lib/firebase';
-import { formatElapsedTime, formatTimeAmPm, getPassUrgency, playNotificationTone, DESTINATION_LIST } from '../lib/constants';
+import {
+  formatElapsedTime,
+  formatTimeAmPm,
+  getPassUrgency,
+  playNotificationTone,
+  DESTINATION_LIST,
+  PASS_NORMAL_MAX_MINUTES,
+  PASS_EXTENDED_MAX_MINUTES
+} from '../lib/constants';
 
 interface CurrentlyOutDashboardProps {
   activePasses: HallPass[];
@@ -86,13 +94,15 @@ useEffect(() => {
     return matchesSearch && matchesDest && matchesTeacher;
   });
 
-  // Urgency counts
-  const overduePasses = activePasses.filter((p) => (Date.now() - p.timeOut) > 12 * 60 * 1000);
+  // Urgency counts — driven by the same PASS_NORMAL_MAX_MINUTES /
+  // PASS_EXTENDED_MAX_MINUTES constants getPassUrgency() uses, so
+  // this can never drift out of sync with the per-pass badges again.
+  const overduePasses = activePasses.filter((p) => (Date.now() - p.timeOut) > PASS_EXTENDED_MAX_MINUTES * 60 * 1000);
   const extendedPasses = activePasses.filter((p) => {
     const elapsed = Date.now() - p.timeOut;
-    return elapsed >= 7 * 60 * 1000 && elapsed <= 12 * 60 * 1000;
+    return elapsed >= PASS_NORMAL_MAX_MINUTES * 60 * 1000 && elapsed <= PASS_EXTENDED_MAX_MINUTES * 60 * 1000;
   });
-  const normalPasses = activePasses.filter((p) => (Date.now() - p.timeOut) < 7 * 60 * 1000);
+  const normalPasses = activePasses.filter((p) => (Date.now() - p.timeOut) < PASS_NORMAL_MAX_MINUTES * 60 * 1000);
 
 // ============================================================
 // STUDENT CONFLICT DETECTION
@@ -330,7 +340,7 @@ useEffect(() => {
         <div className="bg-white rounded-2xl p-4 border-2 border-emerald-200 shadow-md">
           <div className="text-xs font-bold text-emerald-700 uppercase tracking-wider flex items-center gap-1">
             <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            Normal (&lt; 7 min)
+            Normal (&lt; {PASS_NORMAL_MAX_MINUTES} min)
           </div>
           <div className="text-3xl font-black text-emerald-800 mt-1">
             {normalPasses.length}
@@ -340,7 +350,7 @@ useEffect(() => {
         <div className="bg-white rounded-2xl p-4 border-2 border-amber-200 shadow-md">
           <div className="text-xs font-bold text-amber-700 uppercase tracking-wider flex items-center gap-1">
             <span className="w-2 h-2 rounded-full bg-amber-500" />
-            Extended (7-12 min)
+            Extended ({PASS_NORMAL_MAX_MINUTES}-{PASS_EXTENDED_MAX_MINUTES} min)
           </div>
           <div className="text-3xl font-black text-amber-800 mt-1">
             {extendedPasses.length}
@@ -352,7 +362,7 @@ useEffect(() => {
         }`}>
           <div className="text-xs font-bold text-rose-700 uppercase tracking-wider flex items-center gap-1">
             <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
-            Overdue (&gt; 12 min)
+            Overdue (&gt; {PASS_EXTENDED_MAX_MINUTES} min)
           </div>
           <div className="text-3xl font-black text-rose-800 mt-1">
             {overduePasses.length}
