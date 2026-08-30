@@ -295,6 +295,85 @@ export async function getTeacherByEmail(
 }
 
 
+export async function getStudentByEmail(
+  email: string
+): Promise<(Student & { id: string }) | null> {
+
+  try {
+
+    await ensureAuthenticated();
+
+    const studentsQuery = query(
+      collection(
+        db,
+        STUDENTS_COLLECTION
+      ),
+      where(
+        'email',
+        '==',
+        email.toLowerCase()
+      )
+    );
+
+    const snapshot =
+      await getDocs(
+        studentsQuery
+      );
+
+    if (snapshot.empty) {
+      return null;
+    }
+
+    const studentDoc =
+      snapshot.docs[0];
+
+    const data =
+      studentDoc.data();
+
+    return {
+      id: studentDoc.id,
+
+      studentId:
+        String(data.studentId || ''),
+
+      firstName:
+        String(data.firstName || ''),
+
+      lastName:
+        String(data.lastName || ''),
+
+      grade:
+        Number(data.grade || 0),
+
+      active:
+        data.active !== false,
+
+      email:
+        String(data.email || ''),
+
+      homeroom:
+        data.homeroom
+          ? String(data.homeroom)
+          : undefined,
+
+      periodRoom:
+        data.periodRoom
+          ? String(data.periodRoom)
+          : undefined
+    };
+
+  } catch (error) {
+
+    console.error(
+      '[Firebase] Error finding student by email:',
+      error
+    );
+
+    return null;
+  }
+}
+
+
 // ============================================================
 // ATTACH FIREBASE UID TO TEACHER
 // ============================================================
