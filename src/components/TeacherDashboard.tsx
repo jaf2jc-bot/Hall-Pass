@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Search,
   Plus,
@@ -174,6 +174,21 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   // ============================================================
   // INCOMING PASS REQUEST SUBSCRIPTION
   // ============================================================
+  //
+  // soundEnabled is read via a ref inside the listener instead of
+  // being a dependency of this effect. Previously it was in the
+  // dependency array, which meant every time someone toggled the
+  // sound setting, this effect tore down and re-created the
+  // entire Firestore listener — paying its initial-read cost
+  // again for a UI preference change that has nothing to do with
+  // which teacher is logged in.
+  // ============================================================
+
+  const soundEnabledRef = useRef(soundEnabled);
+
+  useEffect(() => {
+    soundEnabledRef.current = soundEnabled;
+  }, [soundEnabled]);
 
   useEffect(() => {
     if (!activeTeacher) {
@@ -195,7 +210,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         if (
           previousPendingCount !== -1 &&
           pending.length > previousPendingCount &&
-          soundEnabled
+          soundEnabledRef.current
         ) {
           playNotificationTone('alert');
         }
@@ -206,7 +221,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     );
 
     return () => unsubscribe();
-  }, [activeTeacher?.id, soundEnabled]);
+  }, [activeTeacher?.id]);
 
   // ============================================================
   // APPROVE / DENY PASS REQUEST
