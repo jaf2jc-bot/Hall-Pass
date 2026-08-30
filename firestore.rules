@@ -465,10 +465,34 @@ service cloud.firestore {
       //
       // Teachers/Admins can approve or deny requests.
       //
-      // Students may NOT modify request status.
+      // Students may cancel (withdraw) their OWN request, but
+      // only while it's still PENDING, and only by flipping the
+      // status to CANCELLED — they cannot touch any other field
+      // or cancel a request that's already been approved/denied.
       //
 
-      allow update: if isTeacher();
+      allow update: if
+        isTeacher() ||
+
+        (
+          isAuthenticated() &&
+
+          (
+            resource.data.studentId == getUserData().studentId ||
+
+            resource.data.studentDocId == getUserData().studentDocId ||
+
+            resource.data.studentEmail == request.auth.token.email
+          ) &&
+
+          resource.data.status == 'PENDING' &&
+
+          request.resource.data.status == 'CANCELLED' &&
+
+          request.resource.data.diff(resource.data)
+            .affectedKeys()
+            .hasOnly(['status', 'cancelledAt'])
+        );
 
 
       // ----------------------------------------------------------
