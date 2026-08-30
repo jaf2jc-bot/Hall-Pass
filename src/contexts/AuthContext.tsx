@@ -2,8 +2,10 @@ import React, {
   createContext,
   useContext,
   useState,
-  useEffect
+  useEffect,
+  useMemo
 } from 'react';
+
 
 import {
   UserProfile,
@@ -115,6 +117,171 @@ export const AuthProvider: React.FC<{
 
   const [students, setStudents] =
     useState<Student[]>([]);
+
+  // ============================================================
+  // MERGED STUDENT DIRECTORY (students collection + users collection)
+  // ============================================================
+  //
+  // Normally every student-role user has a matching doc in the
+  // `students` roster (self-provisioned at login). This merge is
+  // a safety net for accounts that exist in `users` but, for
+  // whatever reason (created before self-provisioning existed,
+  // created by hand directly in Firestore, a failed provisioning
+  // call, etc.), have no matching roster record — without this,
+  // those people are invisible in every "select a student"
+  // dropdown across the app even though they can log in fine.
+  //
+  // This does NOT create any new Firestore documents — it just
+  // presents a synthetic Student object, built from their
+  // UserProfile, everywhere the real roster is used. If you want
+  // it to become a permanent roster record instead, use the
+  // "promote"/edit tooling on the student directory.
+  // ============================================================
+
+  const mergedStudents =
+    useMemo(() => {
+
+      const combined =
+        new Map<string, Student>();
+
+      // Seed with the real, authoritative roster records first.
+      for (const student of students) {
+        combined.set(
+          student.id,
+          student
+        );
+      }
+
+      const realStudentDocIds =
+        new Set(
+          students.map(
+            (student) => student.id
+          )
+        );
+
+      const realEmails =
+        new Set(
+          students
+            .filter(
+              (student) => !!student.email
+            )
+            .map(
+              (student) =>
+                student.email!.toLowerCase()
+            )
+        );
+
+      for (const profile of userProfiles) {
+
+        if (
+          profile.role !== 'student'
+        ) {
+          continue;
+        }
+
+        // Already represented by a real roster doc — skip so we
+        // never show the same person twice.
+        if (
+          profile.studentDocId &&
+          realStudentDocIds.has(
+            profile.studentDocId
+          )
+        ) {
+          continue;
+        }
+
+        if (
+          profile.email &&
+          realEmails.has(
+            profile.email.toLowerCase()
+          )
+        ) {
+          continue;
+        }
+
+        const syntheticId =
+          `user:${profile.uid}`;
+
+        if (
+          combined.has(syntheticId)
+        ) {
+          continue;
+        }
+
+        const nameParts =
+          (
+            profile.displayName ||
+            profile.email.split('@')[0] ||
+            'Student'
+          )
+            .trim()
+            .split(/\s+/);
+
+        const firstName =
+          nameParts[0] ||
+          'Student';
+
+        const lastName =
+          nameParts
+            .slice(1)
+            .join(' ') ||
+          '';
+
+        combined.set(
+          syntheticId,
+          {
+
+            id:
+              syntheticId,
+
+            studentId:
+              profile.studentId ||
+              profile.uid
+                .slice(0, 8)
+                .toUpperCase(),
+
+            firstName,
+
+            lastName,
+
+            grade:
+              profile.grade ?? 0,
+
+            active:
+              true,
+
+            email:
+              profile.email,
+
+            homeroom:
+              profile.room
+          }
+        );
+      }
+
+      return Array.from(
+        combined.values()
+      ).sort(
+        (a, b) => {
+
+          const lastNameCompare =
+            a.lastName.localeCompare(
+              b.lastName
+            );
+
+          if (
+            lastNameCompare !== 0
+          ) {
+            return lastNameCompare;
+          }
+
+          return a.firstName.localeCompare(
+            b.firstName
+          );
+        }
+      );
+
+    }, [students, userProfiles]);
 
   const [teachers, setTeachers] =
     useState<Teacher[]>([]);
@@ -1561,7 +1728,11 @@ export const AuthProvider: React.FC<{
 
         setRole,
 
-        students,
+        // Exposed as `students` (same key every consumer already
+        // uses) but backed by the merged roster+users list so
+        // orphaned user-only accounts still show up everywhere.
+        students:
+          mergedStudents,
 
         teachers,
 
