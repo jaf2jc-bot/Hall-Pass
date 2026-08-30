@@ -167,8 +167,27 @@ service cloud.firestore {
           )
         );
 
-      // Only Admins can modify the roster.
-      allow write: if isAdmin();
+      // Admins can modify the roster freely.
+      //
+      // Anyone authenticated may also CREATE a students doc for
+      // THEMSELVES (email must match their own auth token) — this
+      // is what lets a person's first login auto-add them to the
+      // roster instead of requiring an admin to hand-enter every
+      // student ahead of time. It does not allow creating a
+      // record for someone else, and updates/deletes always
+      // require an admin.
+      //
+      // The app always stores emails lowercased, so the token
+      // side of this comparison is lowercased too.
+      allow create: if
+        isAdmin() ||
+        (
+          isAuthenticated() &&
+          request.resource.data.email ==
+            request.auth.token.email.lower()
+        );
+
+      allow update, delete: if isAdmin();
     }
 
 
