@@ -3,7 +3,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-
 import React, { useEffect, useMemo, useState } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Header } from './components/Header';
@@ -14,11 +13,12 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { PassHistoryView } from './components/PassHistoryView';
 import { RequestPassModal } from './components/RequestPassModal';
 import { StudentDetailModal } from './components/StudentDetailModal';
-import { HallPass, Student } from './types';
+import { HallPass, Student, ConflictPair } from './types';
 import {
   subscribeToAllPasses,
   subscribeToStudentPasses,
-  subscribeToStudentActivePass
+  subscribeToStudentActivePass,
+  subscribeToConflictPairs
 } from './lib/firebase';
 import { School, ShieldCheck } from 'lucide-react';
 
@@ -29,6 +29,7 @@ function MainApp() {
     activeStudent,
     students,
     teachers,
+    userProfiles,
     activeTeacher,
     isLoading
   } = useAuth();
@@ -42,6 +43,14 @@ function MainApp() {
 
   const [allPasses, setAllPasses] =
     useState<HallPass[]>([]);
+
+  // Centralized here instead of each of CurrentlyOutDashboard and
+  // AdminDashboard subscribing to this collection independently —
+  // that used to mean two separate live listeners on the same
+  // small collection, each paying its own initial-read cost and
+  // re-reading again on every tab-switch remount.
+  const [conflictPairs, setConflictPairs] =
+    useState<ConflictPair[]>([]);
 
   // ============================================================
   // NAVIGATION
@@ -183,6 +192,36 @@ function MainApp() {
     currentUser,
     activeStudent?.studentId
   ]);
+
+  // ============================================================
+  // CONFLICT PAIRS (single centralized subscription)
+  // ============================================================
+  //
+  // Gated to non-student roles since the Firestore rule for this
+  // collection only allows isTeacher() to read it anyway — a
+  // student session subscribing here would just get rejected by
+  // the rule and waste a round trip.
+  // ============================================================
+
+  useEffect(() => {
+
+    if (
+      currentRole === 'student'
+    ) {
+      setConflictPairs([]);
+      return;
+    }
+
+    const unsubscribe =
+      subscribeToConflictPairs(
+        (pairs) => {
+          setConflictPairs(pairs);
+        }
+      );
+
+    return () => unsubscribe();
+
+  }, [currentRole]);
 
   // ============================================================
   // ROLE-BASED DEFAULT NAVIGATION
@@ -404,17 +443,39 @@ function MainApp() {
             student experience.
         */}
 
-        {activeTab === 'student' &&
-          (
-            currentRole === 'student' ||
-            currentRole === 'admin'
-          ) && (
+        {/* ====================================================
+            NOTE ON MOUNTING STRATEGY BELOW
+            ====================================================
+            Role-based gating still fully mounts/unmounts (a
+            person's role rarely changes mid-session). Tab-based
+            gating now uses CSS display instead of conditional
+            rendering — switching tabs used to fully unmount a
+            dashboard and remount it on return, tearing down every
+            Firestore listener inside it and re-paying its
+            initial-read cost each time. Keeping it mounted (just
+            hidden) lets those listeners stay warm across tab
+            switches.
+        ==================================================== */}
 
+        {(
+          currentRole === 'student' ||
+          currentRole === 'admin'
+        ) && (
+
+          <div
+            style={{
+              display:
+                activeTab === 'student'
+                  ? undefined
+                  : 'none'
+            }}
+          >
             <StudentDashboard
               activePasses={activePasses}
               allPasses={allPasses}
               soundEnabled={soundEnabled}
             />
+          </div>
 
         )}
 
@@ -422,14 +483,23 @@ function MainApp() {
             LIVE HALLWAY MONITOR
         ==================================================== */}
 
-        {activeTab === 'currently-out' &&
-          currentRole !== 'student' && (
+        {currentRole !== 'student' && (
 
+          <div
+            style={{
+              display:
+                activeTab === 'currently-out'
+                  ? undefined
+                  : 'none'
+            }}
+          >
             <CurrentlyOutDashboard
               activePasses={activePasses}
               teachers={teachers}
               soundEnabled={soundEnabled}
+              conflictPairs={conflictPairs}
             />
+          </div>
 
         )}
 
@@ -437,9 +507,16 @@ function MainApp() {
             TEACHER DASHBOARD
         ==================================================== */}
 
-        {activeTab === 'teacher' &&
-          currentRole !== 'student' && (
+        {currentRole !== 'student' && (
 
+          <div
+            style={{
+              display:
+                activeTab === 'teacher'
+                  ? undefined
+                  : 'none'
+            }}
+          >
             <TeacherDashboard
               activePasses={activePasses}
               allPasses={allPasses}
@@ -451,6 +528,7 @@ function MainApp() {
               }
               soundEnabled={soundEnabled}
             />
+          </div>
 
         )}
 
@@ -458,14 +536,23 @@ function MainApp() {
             ADMIN DASHBOARD
         ==================================================== */}
 
-        {activeTab === 'admin' &&
-          currentRole === 'admin' && (
+        {currentRole === 'admin' && (
 
+          <div
+            style={{
+              display:
+                activeTab === 'admin'
+                  ? undefined
+                  : 'none'
+            }}
+          >
             <AdminDashboard
               students={students}
               teachers={teachers}
               activePasses={activePasses}
               allPasses={allPasses}
+              userProfiles={userProfiles}
+              conflictPairs={conflictPairs}
               onOpenStudentDetail={
                 handleOpenStudentDetail
               }
@@ -473,6 +560,7 @@ function MainApp() {
                 setActiveTab('history')
               }
             />
+          </div>
 
         )}
 
@@ -480,13 +568,21 @@ function MainApp() {
             PASS HISTORY
         ==================================================== */}
 
-        {activeTab === 'history' &&
-          currentRole !== 'student' && (
+        {currentRole !== 'student' && (
 
+          <div
+            style={{
+              display:
+                activeTab === 'history'
+                  ? undefined
+                  : 'none'
+            }}
+          >
             <PassHistoryView
               allPasses={allPasses}
               teachers={teachers}
             />
+          </div>
 
         )}
 
