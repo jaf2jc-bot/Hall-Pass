@@ -50,7 +50,8 @@ export interface HallPass {
 export type StudentHallPassRequestStatus =
   | 'PENDING'
   | 'APPROVED'
-  | 'DENIED';
+  | 'DENIED'
+  | 'CANCELLED';
 
 export interface StudentHallPassRequest {
   id: string;
@@ -73,6 +74,7 @@ export interface StudentHallPassRequest {
   createdAt: number;
   approvedAt?: number;
   deniedAt?: number;
+  cancelledAt?: number;
 
   hallPassId?: string;
 }
