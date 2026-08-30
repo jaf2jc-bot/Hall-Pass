@@ -68,6 +68,29 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [endingPassId, setEndingPassId] = useState<string | null>(null);
 
   // ============================================================
+  // LIVE TIMER TICK
+  // ============================================================
+  //
+  // formatElapsedTime(pass.timeOut) is only recomputed when this
+  // component re-renders. Without something forcing a re-render
+  // every second, the "Time Out" counters on the active-pass
+  // cards below only update whenever an unrelated Firestore
+  // snapshot happens to fire (or on a manual page refresh) —
+  // same fix as the Live Hallway Monitor tab.
+  // ============================================================
+
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(
+      () => setTick((t) => t + 1),
+      1000
+    );
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // ============================================================
   // STUDENT REQUEST STATE
   // ============================================================
 
