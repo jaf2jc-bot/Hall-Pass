@@ -646,10 +646,29 @@ export const AuthProvider: React.FC<{
               matchingTeacher.name
             );
 
-            await attachTeacherUid(
-              matchingTeacher.id,
-              user.uid
-            );
+            // Best-effort: stamp this teacher's Firebase uid onto
+            // their teachers doc so later features that key off
+            // teacherUid (e.g. resolving who to notify) work. If
+            // this write is rejected (e.g. a Firestore rules
+            // change, a stale doc, etc.) it must NOT block sign-in
+            // — the role/profile assignment below already has
+            // everything it needs from matchingTeacher itself.
+            try {
+
+              await attachTeacherUid(
+                matchingTeacher.id,
+                user.uid
+              );
+
+            } catch (
+              attachError
+            ) {
+
+              console.error(
+                '[AuthContext] Failed to attach uid to existing teacher record (continuing sign-in anyway):',
+                attachError
+              );
+            }
 
             profile = {
 
@@ -732,10 +751,26 @@ export const AuthProvider: React.FC<{
             room =
               matchingTeacher.room;
 
-            await attachTeacherUid(
-              matchingTeacher.id,
-              user.uid
-            );
+            // Best-effort — see the matching comment in the
+            // EXISTING USER branch above. A failed attach must
+            // not stop this brand-new teacher from being able to
+            // sign in at all.
+            try {
+
+              await attachTeacherUid(
+                matchingTeacher.id,
+                user.uid
+              );
+
+            } catch (
+              attachError
+            ) {
+
+              console.error(
+                '[AuthContext] Failed to attach uid to new teacher record (continuing sign-in anyway):',
+                attachError
+              );
+            }
           }
 
           // ------------------------------------------------------
